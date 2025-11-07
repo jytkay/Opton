@@ -1,24 +1,29 @@
 ﻿<%@ Master Language="C#" AutoEventWireup="true" CodeBehind="Site.master.cs" Inherits="Opton.SiteMaster" %>
 
+<%@ Register Src="~/Pages/login_register.ascx" TagPrefix="uc" TagName="LoginRegister" %>
+
 <!DOCTYPE html>
 
 <html lang="en">
 <head runat="server">
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title><%: Page.Title %> - My ASP.NET Application</title>
+    <title>
+        <asp:ContentPlaceHolder ID="TitleContent" runat="server" />
+    </title>
 
     <asp:PlaceHolder runat="server">
         <%: Scripts.Render("~/bundles/modernizr") %>
     </asp:PlaceHolder>
 
-    <webopt:bundlereference runat="server" path="~/Content/css" />
-    <link href="~/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+    <webopt:BundleReference runat="server" Path="~/Content/css" />
+    <link rel="stylesheet" type="text/css" href="<%= ResolveUrl("~/Content/site.css") %>" />
 
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css" rel="stylesheet">
 </head>
 <body>
     <form runat="server">
-        <asp:ScriptManager runat="server">
+        <asp:ScriptManager runat="server" EnablePageMethods="true">
             <Scripts>
                 <%--To learn more about bundling scripts in ScriptManager see https://go.microsoft.com/fwlink/?LinkID=301884 --%>
                 <%--Framework Scripts--%>
@@ -37,33 +42,105 @@
             </Scripts>
         </asp:ScriptManager>
 
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-dark bg-dark">
-            <div class="container">
-                <a class="navbar-brand" runat="server" href="~/">Application name</a>
-                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" title="Toggle navigation" aria-controls="navbarSupportedContent"
-                    aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="collapse navbar-collapse d-sm-inline-flex justify-content-between">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item"><a class="nav-link" runat="server" href="~/">Home</a></li>
-                        <li class="nav-item"><a class="nav-link" runat="server" href="~/About">About</a></li>
-                        <li class="nav-item"><a class="nav-link" runat="server" href="~/Contact">Contact</a></li>
-                    </ul>
-                </div>
+        <div id="headerBar" class="header-bar" runat="server">
+            <div class="logo">
+                <a href="<%: ResolveUrl("~/Pages/Customer/catalogue.aspx") %>">
+                    <img id="logoImg" src="" alt="Logo" runat="server" />
+                </a>
             </div>
-        </nav>
-        <div class="container body-content">
-            <asp:ContentPlaceHolder ID="MainContent" runat="server">
-            </asp:ContentPlaceHolder>
-            <hr />
+            <nav class="nav-icons">
+                <div id="customerNavButtons" runat="server" style="display: contents">
+                    <a href="<%: ResolveUrl("~/default.aspx") %>" title="Home" style="margin-right: 7px">
+                        <i class="ri-home-9-fill"></i>
+                    </a>
+                    <a href="<%: ResolveUrl("~/Pages/Customer/track_order.aspx") %>" title="Track Order" style="position: relative;">
+                        <i class="ri-truck-fill"></i>
+                        <i class="ri-subtract-fill" style="font-size: 12px; position: absolute; bottom: 7px; left: -10px;"></i>
+                        <i class="ri-subtract-fill" style="font-size: 8px; position: absolute; bottom: 6px; left: -7px;"></i>
+                    </a>
+
+                    <a href="<%: ResolveUrl("~/Pages/Customer/fav_cart.aspx") %>" title="Favourites / Cart" style="position: relative;">
+                        <i class="ri-shopping-cart-2-fill"></i>
+                        <i class="ri-heart-fill" style="font-size: 12px; position: absolute; top: -5px; right: -10px; color: red;"></i>
+                    </a>
+
+                    <a href="<%: ResolveUrl("~/Pages/Customer/find_retailers.aspx") %>" title="Retailers">
+                        <i class="ri-map-pin-fill"></i>
+                    </a>
+                </div>
+                <div id="adminNavButtons" runat="server" style="display: contents">
+                    <a href="<%: ResolveUrl("~/Pages/Admin/dashboard.aspx") %>" id="navDashboard" title="Dashboard" style="position: relative;">
+                        <i class="ri-pie-chart-2-fill"></i>
+                    </a>
+
+                    <a href="<%: ResolveUrl("~/Pages/Admin/products.aspx") %>" id="navEditProducts" title="Edit Products" style="position: relative;">
+                        <i class="ri-edit-fill"></i>
+                    </a>
+                </div>
+
+                <div id="workerNavButtons" runat="server" style="display: contents">
+                    <a href="<%: ResolveUrl("~/Pages/Worker/orders.aspx") %>" id="navOrders" title="Manage Orders" style="position: relative;">
+                        <i class="ri-truck-fill"></i>
+                    </a>
+
+                    <a href="<%: ResolveUrl("~/Pages/Worker/stock.aspx") %>" id="navStock" title="Stock Requests" style="position: relative;">
+                        <i class="ri-survey-fill"></i>
+                    </a>
+
+                    <a href="<%: ResolveUrl("~/Pages/Worker/appointments.aspx") %>" id="navAppointments" title="Manage Appointments" style="position: relative;">
+                        <i class="ri-calendar-event-fill"></i>
+                    </a>
+                </div>
+
+                <a href="javascript:void(0);" onclick="showLoginRegisterModal()" title="Login">
+                    <i class="ri-user-3-fill"></i>
+                </a>
+            </nav>
+            <asp:ContentPlaceHolder ID="HeaderContent" runat="server"></asp:ContentPlaceHolder>
+        </div>
+
+        <div id="toast" class="toast"></div>
+
+        <div style="min-height: calc(100vh - 95px)">
+            <asp:ContentPlaceHolder ID="MainContent" runat="server"></asp:ContentPlaceHolder>
+        </div>
+
+        <div style="text-align: center; background-color: #2C3639; color: white; padding: 20px 15px; width: 100%;">
+            <p style="margin: 0 0 5px 0; font-size: 14px; color: #A27B5C;">
+                <i class="ri-phone-line" style="margin-right: 4px;"></i>+60 12-345 6789
+        &nbsp; | &nbsp;
+       
+                <i class="ri-mail-line" style="margin-right: 4px;"></i>support@opton.my
+   
+            </p>
+            <hr style="border-top: 1px solid rgba(255,255,255,0.2); width: 60%; margin: 10px auto;" />
             <footer>
-                <p>&copy; <%: DateTime.Now.Year %> - My ASP.NET Application</p>
+                <p style="margin: 0; font-weight: 500;">&copy; <%: DateTime.Now.Year %> - Opton</p>
             </footer>
         </div>
+
+
+        <uc:LoginRegister ID="LoginRegisterControl" runat="server" />
+
     </form>
     <asp:PlaceHolder runat="server">
         <%: Scripts.Render("~/Scripts/bootstrap.js") %>
     </asp:PlaceHolder>
+    <script type="module" src="<%= ResolveUrl("~/Scripts/firebase-init.js") %>"></script>
+    <script type="module" src="<%= ResolveUrl("~/Scripts/colours.js") %>"></script>
+    <script type="text/javascript">
+        window.showToast = function (message) {
+            const toast = document.getElementById('toast');
+            toast.innerText = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    toast.style.display = 'none';
+                }, 500);
+            }, 3000);
+            toast.style.display = 'block';
+        }
+    </script>
 </body>
 </html>

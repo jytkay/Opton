@@ -1,9 +1,9 @@
-﻿using System;
+﻿using FirebaseAdmin.Auth;
+using Google.Cloud.Firestore;
+using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Threading.Tasks;
 using System.Web;
-using System.Web.UI;
-using System.Web.UI.WebControls;
 
 namespace Opton.Pages.Customer
 {
@@ -11,7 +11,14 @@ namespace Opton.Pages.Customer
     {
         protected void Page_Load(object sender, EventArgs e)
         {
+            string productId = Request.QueryString["id"];
 
+            if (string.IsNullOrEmpty(productId))
+            {
+                Response.Redirect(ResolveUrl("~/Pages/Customer/catalogue.aspx"), false);
+                HttpContext.Current.ApplicationInstance.CompleteRequest();
+                return;
+            }
         }
     }
 }
