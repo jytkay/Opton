@@ -350,28 +350,27 @@
 
                 // Editable field generator
                 const makeEditable = (field, value) => {
+                    const isEmpty = !value || value.toString().trim() === '';
+
                     if (field === 'arrivalTime' || field === 'returnRefundTime') {
                         let dtValue = '';
-
                         if (!value) {
-                            dtValue = ''; // empty
+                            dtValue = '';
                         } else if (value instanceof Date) {
                             dtValue = value.toISOString().slice(0, 16);
                         } else if (value.seconds != null) {
-                            // Firestore Timestamp
                             dtValue = new Date(value.seconds * 1000).toISOString().slice(0, 16);
                         } else if (typeof value === 'string') {
                             const parsed = new Date(value);
                             if (!isNaN(parsed)) dtValue = parsed.toISOString().slice(0, 16);
                         }
-
-                        return `<input class="editable-field" data-field="${field}" type="datetime-local" value="${dtValue}">`;
+                        return `<input class="editable-field" data-field="${field}" type="datetime-local" value="${dtValue}" placeholder="Click to edit">`;
                     } else if (field === 'deliveredFrom') {
                         const options = ['R1', 'R2', 'R3', 'Main'];
-                        let optsHtml = options.map(opt => `<option value="${opt}" ${opt === value ? 'selected' : ''}>${opt}</option>`).join('');
+                        let optsHtml = '<option value="">Select...</option>' + options.map(opt => `<option value="${opt}" ${opt === value ? 'selected' : ''}>${opt}</option>`).join('');
                         return `<select class="editable-field" data-field="${field}">${optsHtml}</select>`;
                     } else {
-                        return `<span class="editable-field" data-field="${field}" contenteditable="true">${value || ''}</span>`;
+                        return `<span class="editable-field${isEmpty ? ' empty' : ''}" data-field="${field}" contenteditable="true">${isEmpty ? 'Click to edit' : value}</span>`;
                     }
                 };
 
@@ -434,6 +433,16 @@
 
                 // Editable field event listeners
                 card.querySelectorAll('.editable-field').forEach(el => {
+                    // Handle click on empty fields
+                    if (el.classList.contains('empty') && el.getAttribute('contenteditable')) {
+                        el.addEventListener('focus', () => {
+                            if (el.textContent === 'Click to edit') {
+                                el.textContent = '';
+                                el.classList.remove('empty');
+                            }
+                        });
+                    }
+
                     const updateValue = () => {
                         const field = el.getAttribute('data-field');
                         let newValue = '';
@@ -441,6 +450,11 @@
                             newValue = el.value;
                         } else {
                             newValue = el.innerText.trim();
+                        }
+
+                        // Don't save "Click to edit" as value
+                        if (newValue === 'Click to edit') {
+                            newValue = '';
                         }
 
                         if (hasChanges(order.orderId, field, newValue)) {
@@ -462,67 +476,31 @@
         }
 
         saveBtn.onclick = async () => {
-            // 1️⃣ Confirm before saving
             if (!confirm("Are you sure you want to save changes?")) return;
 
-            const newOrders = [];
-            const updatedOrders = {};
-
-            // Separate new vs existing orders
+            // Apply changes to original data
             for (const orderId in editedData) {
-                if (!orderId) {
-                    // New order
-                    const rowData = editedData[orderId];
-                    const newOrder = {};
-                    ["customerName", "email", "phoneNo", "address", "items", "paymentType", "status", "deliveredFrom", "trackingNo", "arrivalTime", "refundReason", "returnRefundTime", "processedBy"].forEach(field => {
-                        newOrder[field] = rowData[field] ?? "";
-                    });
-                    newOrders.push(newOrder);
-                } else {
-                    // Existing order
-                    updatedOrders[orderId] = editedData[orderId];
+                if (originalData[orderId]) {
+                    Object.assign(originalData[orderId], editedData[orderId]);
+                }
+                // Also update the orders array
+                const order = orders.find(o => o.orderId === orderId);
+                if (order) {
+                    Object.assign(order, editedData[orderId]);
                 }
             }
 
-            try {
-                const res = await fetch('/Handlers/fire_handler.ashx', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: "saveOrders",
-                        newOrders,
-                        updatedOrders
-                    })
-                });
+            // Clear edited data and disable save button
+            editedData = {};
+            saveBtn.disabled = true;
 
-                const result = await res.json();
-                if (result.success) {
-                    // Replace temporary new orders with Firestore IDs if any
-                    if (result.newOrderIds) {
-                        result.newOrderIds.forEach((id, index) => {
-                            const tempOrder = orders[index]; // assumes your orders array has new orders at the top
-                            if (tempOrder) tempOrder.orderId = id;
-                        });
-                    }
+            // Re-render to show updated data
+            renderOrderCards(orders);
 
-                    // Clear editedData & disable save button
-                    editedData = {};
-                    saveBtn.disabled = true;
-
-                    // Re-render orders
-                    renderOrderCards(orders);
-
-                    // 2️⃣ Show toast using Site.Master's toast
-                    if (typeof showToast === 'function') {
-                        showToast("Orders saved successfully!");
-                    } else {
-                        alert("Orders saved successfully!");
-                    }
-                } else {
-                    alert("Failed to save changes. Please try again.");
-                }
-            } catch (err) {
-                alert("Error saving changes: " + err.message);
+            if (typeof showToast === 'function') {
+                showToast("Orders saved successfully!");
+            } else {
+                alert("Orders saved successfully!");
             }
         };
 

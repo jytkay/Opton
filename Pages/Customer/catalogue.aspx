@@ -553,7 +553,35 @@
 
                 // Search filter - if search term is empty/null, show all
                 if (searchTerm.trim() !== '') {
-                    if (!productName.includes(searchTerm) && !productId.includes(searchTerm)) {
+                    let matches = false;
+
+                    // Check name and ID
+                    if (productName.includes(searchTerm) || productId.includes(searchTerm)) {
+                        matches = true;
+                    }
+
+                    // Check price (support "RM100", "100", etc.)
+                    const priceSearchMatch = searchTerm.match(/rm\s*(\d+)/i);
+                    if (priceSearchMatch) {
+                        const searchPrice = parseFloat(priceSearchMatch[1]);
+                        // Allow ±10% tolerance for price searches
+                        if (Math.abs(productPrice - searchPrice) <= searchPrice * 0.1) {
+                            matches = true;
+                        }
+                    } else if (/^\d+$/.test(searchTerm)) {
+                        // Pure number search
+                        const searchPrice = parseFloat(searchTerm);
+                        if (Math.abs(productPrice - searchPrice) <= searchPrice * 0.1) {
+                            matches = true;
+                        }
+                    }
+
+                    // Check colors
+                    if (productColors.some(color => color.includes(searchTerm))) {
+                        matches = true;
+                    }
+
+                    if (!matches) {
                         return false;
                     }
                 }
@@ -660,6 +688,11 @@
                             const timeA = new Date(dateA).getTime();
                             const timeB = new Date(dateB).getTime();
                             comparison = timeB - timeA;
+                            break;
+                        case 'Popularity':
+                            const countA = productOrderCounts[a.getAttribute('data-product-id')] || 0;
+                            const countB = productOrderCounts[b.getAttribute('data-product-id')] || 0;
+                            comparison = countB - countA; // Higher count = more popular
                             break;
                         default:
                             return 0;
@@ -958,9 +991,105 @@
         window.goToClientPage = function (pageNum) {
             console.log(`Going to page ${pageNum + 1}`);
             currentClientPage = pageNum;
-            applyFiltersAndSort();
 
-            // Scroll to top of catalogue
+            // Get current filtered products
+            const searchInput = document.querySelector('.search-container input');
+            const sortSelect = document.querySelector('.select-container select');
+            const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+            const sortValue = sortSelect ? sortSelect.value : 'Sort by';
+
+            // Re-filter products
+            let visibleProducts = [...window.masterProductList].filter(product => {
+                // Apply all the same filters from applyFiltersAndSort
+                const productName = (product.getAttribute('data-product-name') || '').toLowerCase();
+                const productId = (product.getAttribute('data-product-id') || '').toLowerCase();
+                const productCategory = (product.getAttribute('data-product-category') || '').toLowerCase().trim();
+                const productAge = (product.getAttribute('data-product-age') || '').toLowerCase().trim();
+                const productShape = (product.getAttribute('data-product-shape') || '').toLowerCase().trim();
+                const productColors = (product.getAttribute('data-product-colors') || '').toLowerCase().split(',').map(c => c.trim()).filter(c => c);
+                const productMaterial = (product.getAttribute('data-product-material') || '').toLowerCase().trim();
+                const productPrice = parseFloat(product.getAttribute('data-product-price')) || 0;
+
+                // Search filter
+                if (searchTerm.trim() !== '') {
+                    if (!productName.includes(searchTerm) && !productId.includes(searchTerm)) {
+                        return false;
+                    }
+                }
+
+                // Apply all active filters (same logic as applyFiltersAndSort)
+                if (activeFilters.category.length > 0 && !activeFilters.category.includes('all')) {
+                    if (!activeFilters.category.includes(productCategory)) return false;
+                }
+                if (activeFilters.age.length > 0 && !activeFilters.age.includes('all')) {
+                    if (productAge !== '' && !activeFilters.age.some(age => productAge.includes(age.toLowerCase()))) {
+                        return false;
+                    }
+                }
+                if (activeFilters.shape.length > 0 && !activeFilters.shape.includes('all')) {
+                    if (productShape !== '' && !activeFilters.shape.includes(productShape)) {
+                        return false;
+                    }
+                }
+                if (activeFilters.color.length > 0 && !activeFilters.color.includes('all')) {
+                    if (productColors.length > 0 && !activeFilters.color.some(color => productColors.includes(color.toLowerCase()))) {
+                        return false;
+                    }
+                }
+                if (activeFilters.material.length > 0 && !activeFilters.material.includes('all')) {
+                    if (productMaterial !== '' && !activeFilters.material.some(mat => productMaterial.includes(mat.toLowerCase()))) {
+                        return false;
+                    }
+                }
+                if (activeFilters.price.length > 0 && !activeFilters.price.includes('all')) {
+                    let priceMatch = false;
+                    activeFilters.price.forEach(range => {
+                        if (range === 'under100' && productPrice < 100) priceMatch = true;
+                        if (range === '100-300' && productPrice >= 100 && productPrice <= 300) priceMatch = true;
+                        if (range === '300-500' && productPrice > 300 && productPrice <= 500) priceMatch = true;
+                        if (range === '500-1000' && productPrice > 500 && productPrice <= 1000) priceMatch = true;
+                        if (range === 'above1000' && productPrice > 1000) priceMatch = true;
+                    });
+                    if (!priceMatch) return false;
+                }
+
+                return true;
+            });
+
+            // Re-apply sort
+            if (sortValue !== 'Sort by' && visibleProducts.length > 0) {
+                visibleProducts.sort((a, b) => {
+                    const priceA = parseFloat(a.getAttribute('data-product-price')) || 0;
+                    const priceB = parseFloat(b.getAttribute('data-product-price')) || 0;
+                    const nameA = (a.getAttribute('data-product-name') || '').toLowerCase();
+                    const nameB = (b.getAttribute('data-product-name') || '').toLowerCase();
+                    const dateA = a.getAttribute('data-product-date') || '';
+                    const dateB = b.getAttribute('data-product-date') || '';
+
+                    let comparison = 0;
+                    switch (sortValue) {
+                        case 'Name':
+                            comparison = nameA.localeCompare(nameB);
+                            break;
+                        case 'Price':
+                            comparison = priceA - priceB;
+                            break;
+                        case 'Latest':
+                            const timeA = new Date(dateA).getTime();
+                            const timeB = new Date(dateB).getTime();
+                            comparison = timeB - timeA;
+                            break;
+                        default:
+                            return 0;
+                    }
+                    return sortOrder === 'asc' ? comparison : -comparison;
+                });
+            }
+
+            // Render the specific page
+            renderProducts(visibleProducts);
+
+            // Scroll to top
             const toolbar = document.querySelector('.toolbar');
             if (toolbar) {
                 toolbar.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1176,7 +1305,17 @@
 
             const isAuth = await isAuthenticated();
 
-            console.log('ADD TO CART - Product:', productId, 'Auth:', isAuth);
+            // Get the product element to extract available colors
+            const productElement = document.querySelector(`[data-product-id="${productId}"]`);
+            const productColors = productElement ?
+                (productElement.getAttribute('data-product-colors') || '').split(',').map(c => c.trim()).filter(c => c) :
+                [];
+
+            // For catalogue, use first available color or show selection modal
+            let selectedColor = productColors.length > 0 ? productColors[0] : 'Default';
+            let selectedSize = 'Default'; // Glasses typically don't have sizes in catalogue view
+
+            console.log('ADD TO CART - Product:', productId, 'Auth:', isAuth, 'Color:', selectedColor, 'Size:', selectedSize);
 
             if (isAuth) {
                 const idToken = await window.getIdToken();
@@ -1189,6 +1328,8 @@
                             action: 'addToCart',
                             productId: productId,
                             quantity: 1,
+                            colour: selectedColor,
+                            size: selectedSize,
                             idToken: idToken
                         })
                     });
@@ -1207,7 +1348,11 @@
                 }
             } else {
                 let cartItems = getGuestCart();
-                const existingItem = cartItems.find(item => item.productId === productId);
+                const existingItem = cartItems.find(item =>
+                    item.productId === productId &&
+                    item.colour === selectedColor &&
+                    item.size === selectedSize
+                );
 
                 if (existingItem) {
                     existingItem.quantity += 1;
@@ -1215,6 +1360,8 @@
                     cartItems.push({
                         productId: productId,
                         quantity: 1,
+                        colour: selectedColor,
+                        size: selectedSize,
                         addedOn: new Date().toISOString()
                     });
                 }
@@ -1502,9 +1649,41 @@
             }
         }
 
+        let productOrderCounts = {};
+
+        async function loadProductPopularity() {
+            try {
+                const res = await fetch('/Handlers/fire_handler.ashx', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: "getOrdersList" })
+                });
+                const data = await res.json();
+
+                if (data.success && data.orders?.length) {
+                    productOrderCounts = {};
+
+                    // Count orders per product
+                    data.orders.forEach(order => {
+                        if (order.items && typeof order.items === 'object') {
+                            for (const productId in order.items) {
+                                productOrderCounts[productId] = (productOrderCounts[productId] || 0) + 1;
+                            }
+                        }
+                    });
+
+                    console.log('Product popularity loaded:', productOrderCounts);
+                }
+            } catch (err) {
+                console.error('Error loading product popularity:', err);
+            }
+        }
+
         // ==================== INITIALIZATION ====================
         window.initializeCataloguePage = async function () {
             console.log('=== INITIALIZING CATALOGUE PAGE ===');
+
+            await loadProductPopularity();
 
             // Get all product items from the server-rendered HTML
             const allProductElements = document.querySelectorAll('.product-item');

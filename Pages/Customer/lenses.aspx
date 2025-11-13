@@ -851,7 +851,19 @@
                 return;
             }
 
-            const orderData = collectFormData();
+            const formData = collectFormData();
+
+            // Format data to match fav_cart.aspx structure (array of items)
+            const orderData = {
+                items: [{
+                    product: formData.product,
+                    package: formData.package,
+                    addons: formData.addons,
+                    prescription: formData.prescription,
+                    quantity: 1,
+                    prices: formData.prices
+                }]
+            };
 
             // Store order data in sessionStorage for checkout page
             sessionStorage.setItem('checkoutData', JSON.stringify(orderData));

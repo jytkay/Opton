@@ -244,10 +244,11 @@
     <div class="appointments-container">
 
         <!-- Div 1: Product Hold -->
-        <div class="product-hold" onclick="showUserProductList()">
-            <i class="ri-add-circle-line"></i>
-            Found something you like? Let us hold onto it for you!
-        </div>
+      <div class="product-hold" onclick="showUserProductList()">
+    <i class="ri-add-circle-line"></i>
+    <span id="productHoldText">Found something you like? Let us hold onto it for you!</span>
+    <span id="selectedCount" style="display: none; margin-left: 10px; background: #A27B5C; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.9rem;"></span>
+</div>
         <hr class="thick-dark" />
 
         <!-- Div 2: Map + User Info -->
@@ -370,6 +371,59 @@
         <!-- Book Appointment button -->
         <button type="button" class="book-btn" id="bookAppointmentBtn" disabled onclick="bookAppointment()">Book Appointment</button>
     </div>
+    <!-- Product Selection Modal -->
+<div id="productModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; overflow-y: auto;">
+    <div style="max-width: 1000px; margin: 50px auto; background: white; border-radius: 8px; padding: 20px; position: relative;">
+        <button onclick="closeProductModal()" style="position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+        
+        <h2 style="text-align: center; margin-bottom: 20px;">Select Products to Hold (Max 3)</h2>
+        
+        <!-- Search and Filter -->
+        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <input type="text" id="modalSearch" placeholder="Search products..." style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 6px;" oninput="filterModalProducts()" />
+        </div>
+        
+        <!-- Selected Products Display -->
+        <div id="selectedProductsDisplay" style="margin-bottom: 20px; padding: 10px; background: #f5f5f5; border-radius: 6px; min-height: 50px;">
+            <strong>Selected Products (0/3):</strong>
+            <div id="selectedProductsList"></div>
+        </div>
+        
+        <!-- Product Grid -->
+        <div id="modalProductGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; max-height: 500px; overflow-y: auto;">
+            <!-- Products will be loaded here -->
+        </div>
+        
+        <button type="button" onclick="confirmProductSelection()" style="margin-top: 20px; padding: 10px 20px; background: #A27B5C; color: white; border: none; border-radius: 6px; cursor: pointer; display: block; margin-left: auto; margin-right: auto;">Confirm Selection</button>
+    </div>
+</div>
+
+<!-- Product Configuration Modal -->
+<div id="configModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000;">
+    <div style="max-width: 500px; margin: 100px auto; background: white; border-radius: 8px; padding: 20px;">
+        <h3 id="configProductName" style="text-align: center; margin-bottom: 20px;"></h3>
+        
+        <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: 600;">Color:</label>
+            <select id="configColor" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px;"></select>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: 600;">Size:</label>
+            <select id="configSize" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px;">
+                <option value="Default">Default</option>
+                <option value="Small">Small</option>
+                <option value="Medium">Medium</option>
+                <option value="Large">Large</option>
+            </select>
+        </div>
+        
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button type="button" onclick="closeConfigModal()" style="padding: 8px 16px; background: #ccc; border: none; border-radius: 6px; cursor: pointer;">Cancel</button>
+            <button type="button"  onclick="saveProductConfig()" style="padding: 8px 16px; background: #A27B5C; color: white; border: none; border-radius: 6px; cursor: pointer;">Save</button>
+        </div>
+    </div>
+</div>
 
     <script type="module">
         let retailerOpeningHours = {};
@@ -578,8 +632,377 @@
             }
         });
 
-        function showUserProductList() {
-            alert("Show user's saved products with checkboxes.");
+        let selectedProducts = [];
+        let allStoreProducts = [];
+        let currentConfigProductId = null;
+        let currentRetailerId = null;
+
+        // Extract colors and sizes from inventory for specific retailer
+        function extractColorsAndSizes(product, retailerId) {
+            // Determine which inventory column to use
+            let inventorySource = product.inventory || {};
+
+            if (retailerId === 'R1' && product.R1) {
+                inventorySource = product.R1;
+            } else if (retailerId === 'R2' && product.R2) {
+                inventorySource = product.R2;
+            } else if (retailerId === 'R3' && product.R3) {
+                inventorySource = product.R3;
+            }
+
+            const colorsSet = new Set();
+            const sizesSet = new Set();
+
+            if (!inventorySource || typeof inventorySource !== 'object') {
+                return { colors: ['Default'], sizes: ['Default'] };
+            }
+
+            // Check if it's nested structure with Adults/Kids
+            if (inventorySource.Adults || inventorySource.Kids) {
+                // Process Adults
+                if (inventorySource.Adults && typeof inventorySource.Adults === 'object') {
+                    Object.keys(inventorySource.Adults).forEach(key => {
+                        const quantity = inventorySource.Adults[key];
+                        if (typeof quantity === 'number' && quantity > 0) {
+                            // Extract color from key (e.g., "black", "silver", "black23")
+                            const colorMatch = key.match(/^([a-z]+)(\d*)$/i);
+                            if (colorMatch) {
+                                const colorName = colorMatch[1].toLowerCase();
+                                const size = colorMatch[2];
+
+                                colorsSet.add(colorName);
+                                if (size) {
+                                    sizesSet.add(size);
+                                } else {
+                                    sizesSet.add('Adults');
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // Process Kids
+                if (inventorySource.Kids && typeof inventorySource.Kids === 'object') {
+                    Object.keys(inventorySource.Kids).forEach(key => {
+                        const quantity = inventorySource.Kids[key];
+                        if (typeof quantity === 'number' && quantity > 0) {
+                            const colorMatch = key.match(/^([a-z]+)(\d*)$/i);
+                            if (colorMatch) {
+                                const colorName = colorMatch[1].toLowerCase();
+                                const size = colorMatch[2];
+
+                                colorsSet.add(colorName);
+                                if (size) {
+                                    sizesSet.add(size);
+                                } else {
+                                    sizesSet.add('Kids');
+                                }
+                            }
+                        }
+                    });
+                }
+            } else {
+                // Flat structure: {"black":200,"white":183}
+                Object.keys(inventorySource).forEach(key => {
+                    const quantity = inventorySource[key];
+                    if (typeof quantity === 'number' && quantity > 0) {
+                        const colorMatch = key.match(/^([a-z]+)(\d*)$/i);
+                        if (colorMatch) {
+                            const colorName = colorMatch[1].toLowerCase();
+                            const size = colorMatch[2];
+
+                            colorsSet.add(colorName);
+                            if (size) {
+                                sizesSet.add(size);
+                            }
+                        }
+                    }
+                });
+            }
+
+            return {
+                colors: colorsSet.size > 0 ? Array.from(colorsSet) : ['Default'],
+                sizes: sizesSet.size > 0 ? Array.from(sizesSet).sort((a, b) => {
+                    // Sort: Kids, Adults, then numeric
+                    if (a === 'Kids') return -1;
+                    if (b === 'Kids') return 1;
+                    if (a === 'Adults') return -1;
+                    if (b === 'Adults') return 1;
+                    return parseInt(a) - parseInt(b);
+                }) : ['Default']
+            };
+        }
+
+        async function showUserProductList() {
+            const params = new URLSearchParams(window.location.search);
+            const retailerId = params.get('retailerId');
+
+            if (!retailerId) {
+                alert('No retailer selected');
+                return;
+            }
+
+            currentRetailerId = retailerId;
+
+            try {
+                const response = await fetch('/Handlers/fire_handler.ashx', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'getProductsList'
+                    })
+                });
+
+                const data = await response.json();
+                console.log('Products response:', data);
+
+                if (data.success && data.products) {
+                    // Filter products available at this specific retailer
+                    allStoreProducts = data.products.filter(p => {
+                        const productId = p.productId || p.id;
+
+                        // Check if product has inventory for this retailer
+                        if (retailerId === 'R1' && p.R1) return true;
+                        if (retailerId === 'R2' && p.R2) return true;
+                        if (retailerId === 'R3' && p.R3) return true;
+                        if (p.inventory) return true; // Always include inventory
+
+                        return false;
+                    });
+
+                    console.log('Loaded products for retailer:', allStoreProducts.length);
+                    displayProductModal(allStoreProducts);
+                } else {
+                    alert('No products available');
+                }
+            } catch (err) {
+                console.error('Error loading products:', err);
+                alert('Failed to load products');
+            }
+        }
+
+        function displayProductModal(products) {
+            const modal = document.getElementById('productModal');
+            const grid = document.getElementById('modalProductGrid');
+
+            grid.innerHTML = '';
+
+            products.forEach(product => {
+                const productId = product.productId || product.id;
+                const isSelected = selectedProducts.some(p => p.id === productId);
+                const { colors, sizes } = extractColorsAndSizes(product, currentRetailerId);
+
+                const card = document.createElement('div');
+                card.style.cssText = `
+            border: 2px solid ${isSelected ? '#A27B5C' : '#ddd'};
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: ${isSelected ? '#f5f5f5' : 'white'};
+            opacity: ${selectedProducts.length >= 3 && !isSelected ? '0.5' : '1'};
+            pointer-events: ${selectedProducts.length >= 3 && !isSelected ? 'none' : 'auto'};
+        `;
+
+                // Simple display - just icon
+                const displayContent = `
+            <div class="product-card-display">
+                <i class="ri-glasses-2-line"></i>
+            </div>
+        `;
+
+                card.innerHTML = `
+            ${displayContent}
+            <div style="font-weight: 600; margin-bottom: 5px; font-size: 14px;">${product.name}</div>
+            <div style="color: #A27B5C; font-size: 16px; font-weight: 600;">RM ${product.price}</div>
+            <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                ${colors.length} color(s) • ${sizes.length} size(s)
+            </div>
+            ${isSelected ? '<div style="color: #A27B5C; font-weight: 600; margin-top: 5px;">✓ Selected</div>' : ''}
+        `;
+
+                card.onclick = () => selectProduct(product);
+                grid.appendChild(card);
+            });
+
+            modal.style.display = 'block';
+            updateSelectedDisplay();
+        }
+
+        function selectProduct(product) {
+            const productId = product.productId || product.id;
+            const existingIndex = selectedProducts.findIndex(p => p.id === productId);
+
+            if (existingIndex >= 0) {
+                // Deselect
+                selectedProducts.splice(existingIndex, 1);
+                displayProductModal(allStoreProducts);
+            } else if (selectedProducts.length < 3) {
+                // Show configuration modal
+                currentConfigProductId = productId;
+                showConfigModal(product);
+            } else {
+                alert('You can only select up to 3 products');
+            }
+        }
+
+        function showConfigModal(product) {
+            const modal = document.getElementById('configModal');
+            const nameEl = document.getElementById('configProductName');
+            const colorSelect = document.getElementById('configColor');
+            const sizeSelect = document.getElementById('configSize');
+
+            const productId = product.productId || product.id;
+            const { colors, sizes } = extractColorsAndSizes(product, currentRetailerId);
+
+            nameEl.textContent = product.name;
+
+            // Populate colors
+            colorSelect.innerHTML = '';
+            colors.forEach(color => {
+                const option = document.createElement('option');
+                option.value = color;
+                option.textContent = color.charAt(0).toUpperCase() + color.slice(1);
+                colorSelect.appendChild(option);
+            });
+
+            // Populate sizes
+            sizeSelect.innerHTML = '';
+            sizes.forEach(size => {
+                const option = document.createElement('option');
+                option.value = size;
+                option.textContent = size === 'Adults' ? 'Adults' : size === 'Kids' ? 'Kids' : `Size ${size}`;
+                sizeSelect.appendChild(option);
+            });
+
+            modal.style.display = 'block';
+        }
+
+        function closeConfigModal() {
+            document.getElementById('configModal').style.display = 'none';
+            currentConfigProductId = null;
+        }
+
+        function saveProductConfig() {
+            const color = document.getElementById('configColor').value;
+            const size = document.getElementById('configSize').value;
+
+            const product = allStoreProducts.find(p => {
+                const pid = p.productId || p.id;
+                return pid === currentConfigProductId;
+            });
+
+            if (product) {
+                const productId = product.productId || product.id;
+
+                selectedProducts.push({
+                    id: productId,
+                    name: product.name,
+                    price: product.price,
+                    color: color,
+                    size: size
+                });
+
+                updateSelectedDisplay();
+                displayProductModal(allStoreProducts);
+            }
+
+            closeConfigModal();
+        }
+
+        function updateSelectedDisplay() {
+            const displayDiv = document.getElementById('selectedProductsList');
+            const countSpan = document.getElementById('selectedCount');
+            const productHoldText = document.getElementById('productHoldText');
+
+            // Update the modal header count
+            const modalHeader = document.querySelector('#selectedProductsDisplay strong');
+            if (modalHeader) {
+                modalHeader.textContent = `Selected Products (${selectedProducts.length}/3):`;
+            }
+
+            if (selectedProducts.length === 0) {
+                displayDiv.innerHTML = '<div style="color: #999; padding: 5px;">No products selected yet</div>';
+                countSpan.style.display = 'none';
+                productHoldText.textContent = 'Found something you like? Let us hold onto it for you!';
+            } else {
+                displayDiv.innerHTML = '';
+                selectedProducts.forEach(p => {
+                    const productDiv = document.createElement('div');
+                    productDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 8px; background: white; margin-top: 8px; border-radius: 6px;';
+
+                    productDiv.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="ri-glasses-2-line" style="font-size: 24px; color: #A27B5C;"></i>
+                    <div>
+                        <div style="font-weight: 600;">${p.name}</div>
+                        <div style="font-size: 0.85rem; color: #666;">${p.color} | ${p.size}</div>
+                    </div>
+                </div>
+            `;
+
+                    const removeBtn = document.createElement('button');
+                    removeBtn.textContent = 'Remove';
+                    removeBtn.style.cssText = 'background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer;';
+                    removeBtn.onclick = () => removeSelectedProduct(p.id);
+
+                    productDiv.appendChild(removeBtn);
+                    displayDiv.appendChild(productDiv);
+                });
+
+                countSpan.textContent = `${selectedProducts.length} selected`;
+                countSpan.style.display = 'inline-block';
+                productHoldText.textContent = `${selectedProducts.length} product(s) selected to hold`;
+            }
+
+            // Update main page counter
+            const mainCount = document.querySelector('.product-hold #selectedCount');
+            if (mainCount) {
+                mainCount.textContent = `${selectedProducts.length} selected`;
+                mainCount.style.display = selectedProducts.length > 0 ? 'inline-block' : 'none';
+            }
+        }
+
+        function removeSelectedProduct(productId) {
+            selectedProducts = selectedProducts.filter(p => p.id !== productId);
+            updateSelectedDisplay();
+            displayProductModal(allStoreProducts);
+        }
+
+        function filterModalProducts() {
+            const searchTerm = document.getElementById('modalSearch').value.toLowerCase();
+            const filtered = allStoreProducts.filter(p => {
+                const name = (p.name || '').toLowerCase();
+                const id = ((p.productId || p.id) || '').toLowerCase();
+                return name.includes(searchTerm) || id.includes(searchTerm);
+            });
+            displayProductModal(filtered);
+        }
+
+        function closeProductModal() {
+            document.getElementById('productModal').style.display = 'none';
+        }
+
+        function confirmProductSelection() {
+            if (selectedProducts.length === 0) {
+                alert('Please select at least one product');
+                return;
+            }
+
+            closeProductModal();
+
+            // Update the main display counter
+            const countSpan = document.getElementById('selectedCount');
+            const productHoldText = document.getElementById('productHoldText');
+
+            if (countSpan && productHoldText) {
+                countSpan.textContent = `${selectedProducts.length} selected`;
+                countSpan.style.display = 'inline-block';
+                productHoldText.textContent = `${selectedProducts.length} product(s) selected to hold`;
+            }
+
+            console.log('Confirmed products:', selectedProducts);
         }
 
         function updateAppointmentTimes() {
@@ -643,7 +1066,7 @@
             }
         }
 
-        function bookAppointment() {
+        async function bookAppointment() {
             const name = document.getElementById('userName').value.trim();
             const email = document.getElementById('userEmail').value.trim();
             const phone = document.getElementById('userPhone').value.trim();
@@ -668,13 +1091,15 @@
                 return;
             }
 
-            // Optional prescription handling
+            // Build prescription data object matching Firebase structure
             if (uploadRadio.checked) {
                 const fileInput = document.getElementById('prescriptionFile');
                 if (fileInput.files.length > 0) {
                     prescriptionData = {
-                        type: prescriptionTypeValue || 'unspecified',
-                        file: fileInput.files[0].name
+                        Prescription: {
+                            type: prescriptionTypeValue || 'unspecified',
+                            file: fileInput.files[0].name
+                        }
                     };
                 }
             } else if (manualRadio.checked) {
@@ -687,60 +1112,164 @@
                 const pd = document.getElementById('pd').value.trim();
 
                 if (leftSphere || leftCylinder || leftAxis || rightSphere || rightCylinder || rightAxis || pd) {
+                    // Build prescription object based on type
+                    const prescriptionObj = {
+                        type: prescriptionTypeValue || 'unspecified'
+                    };
+
+                    // Add prescription values based on type
+                    if (prescriptionTypeValue === 'nearsightedness' || prescriptionTypeValue === 'farsightedness') {
+                        prescriptionObj.Near = {
+                            left: leftSphere || '0',
+                            right: rightSphere || '0'
+                        };
+                        prescriptionObj.Far = {
+                            left: leftCylinder || '0',
+                            right: rightCylinder || '0'
+                        };
+                    } else if (prescriptionTypeValue === 'reading') {
+                        prescriptionObj.Reading = {
+                            left: leftSphere || '0',
+                            right: rightSphere || '0'
+                        };
+                    } else {
+                        // Default structure for other types
+                        prescriptionObj.Left = {
+                            sphere: leftSphere || '0',
+                            cylinder: leftCylinder || '0',
+                            axis: leftAxis || '0'
+                        };
+                        prescriptionObj.Right = {
+                            sphere: rightSphere || '0',
+                            cylinder: rightCylinder || '0',
+                            axis: rightAxis || '0'
+                        };
+                    }
+
+                    if (pd) {
+                        prescriptionObj.PD = pd;
+                    }
+
                     prescriptionData = {
-                        type: prescriptionTypeValue || 'unspecified',
-                        leftSphere, leftCylinder, leftAxis,
-                        rightSphere, rightCylinder, rightAxis,
-                        pd
+                        Prescription: prescriptionObj
                     };
                 }
             }
 
             const remarks = document.getElementById('userRemarks').value.trim();
 
+            // Build holdItems object matching Firebase structure
+            // Format: {"P-20":{"Adults":"silver"},"P-21":{"Adults":"black"}}
+            const holdItems = {};
+            selectedProducts.forEach(p => {
+                if (!holdItems[p.id]) {
+                    holdItems[p.id] = {};
+                }
+                // FIX: Store as {Adults: "black"} not {Adults: ["black"]}
+                holdItems[p.id][p.size] = p.color;
+            });
+
+            // Get retailer ID
+            const params = new URLSearchParams(window.location.search);
+            const retailerId = params.get('retailerId');
+
+            // FIX: Create proper timestamp format for dateTime
+            // Combine date and time into ISO format then let server convert to Timestamp
+            const dateTimeISO = `${date}T${time}:00`;
+
             // Disable button to prevent double submission
             const bookBtn = document.getElementById('bookAppointmentBtn');
             bookBtn.disabled = true;
-            bookBtn.textContent = 'Sending...';
+            bookBtn.textContent = 'Booking...';
 
-            (async () => {
-                try {
-                    console.log('Sending email request...');
+            try {
+                console.log('Saving appointment...');
 
-                    const response = await fetch('/Handlers/send_email_handler.ashx', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'sendAppointmentEmail',
-                            userEmail: email,
-                            userName: name,
-                            appointmentType: type,
-                            appointmentDate: date,
-                            appointmentTime: time,
-                            retailerName: document.querySelector('.retailer-name').textContent,
-                            retailerAddress: document.getElementById('retailerAddress').textContent
-                        })
-                    });
-
-                    const data = await response.json();
-                    console.log('Response:', data);
-
-                    if (data.success) {
-                        alert('Appointment confirmed! A calendar invite has been sent to your email.');
-                        // Optionally redirect or clear form
-                        // window.location.href = '/Pages/Customer/find_retailers.aspx';
-                    } else {
-                        alert('Appointment booking failed: ' + (data.message || 'Unknown error'));
-                        console.error('Error details:', data);
-                    }
-                } catch (err) {
-                    console.error('Error:', err);
-                    alert('Error confirming appointment: ' + err.message);
-                } finally {
-                    bookBtn.disabled = false;
-                    bookBtn.textContent = 'Book Appointment';
+                // Get user ID if authenticated
+                let userId = null;
+                if (typeof window.getCurrentUser === 'function') {
+                    const user = await window.getCurrentUser();
+                    userId = user ? user.uid : null;
                 }
-            })();
+
+                // Prepare payload with correct structure
+                const payload = {
+                    action: 'saveAppointment',
+                    storeId: retailerId,
+                    userId: userId || '',
+                    email: email,
+                    name: name,
+                    phoneNo: phone, // Will be converted to number on server
+                    details: remarks || '',
+                    type: type.charAt(0).toUpperCase() + type.slice(1), // Capitalize first letter
+                    dateTime: dateTimeISO, // Send as ISO string for server to convert to Timestamp
+                    remarks: remarks || '',
+                    status: 'Booked'
+                };
+
+                // Add prescription if exists
+                if (prescriptionData) {
+                    payload.prescription = prescriptionData;
+                }
+
+                // Add holdItems if exists
+                if (Object.keys(holdItems).length > 0) {
+                    payload.holdItems = holdItems;
+                }
+
+                console.log('Payload:', JSON.stringify(payload, null, 2));
+
+                // Save appointment to Firebase
+                const saveResponse = await fetch('/Handlers/fire_handler.ashx', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const saveData = await saveResponse.json();
+                console.log('Save response:', saveData);
+
+                if (!saveData.success) {
+                    throw new Error(saveData.message || 'Failed to save appointment');
+                }
+
+                // Send email notification
+                console.log('Sending email notification...');
+                const emailResponse = await fetch('/Handlers/send_email_handler.ashx', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'sendAppointmentEmail',
+                        userEmail: email,
+                        userName: name,
+                        appointmentType: type,
+                        appointmentDate: date,
+                        appointmentTime: time,
+                        retailerName: document.querySelector('.retailer-name').textContent,
+                        retailerAddress: document.getElementById('retailerAddress').textContent,
+                        holdProducts: selectedProducts,
+                        remarks: remarks,
+                        prescriptionData: prescriptionData
+                    })
+                });
+
+                const emailData = await emailResponse.json();
+                console.log('Email response:', emailData);
+
+                // Show success message
+                alert('Appointment booked successfully! A confirmation email has been sent to ' + email);
+
+                // Optionally redirect back to retailers page
+                setTimeout(() => {
+                    window.location.href = '/Pages/Customer/find_retailers.aspx';
+                }, 1500);
+
+            } catch (err) {
+                console.error('Error booking appointment:', err);
+                alert('Error booking appointment: ' + err.message);
+                bookBtn.disabled = false;
+                bookBtn.textContent = 'Book Appointment';
+            }
         }
     </script>
 </asp:Content>

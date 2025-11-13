@@ -717,8 +717,8 @@
             const data = sessionStorage.getItem('checkoutData');
 
             if (!data) {
-                alert('No order data found. Redirecting to catalogue...');
-                window.location.href = '/Pages/Customer/catalogue.aspx';
+                alert('No order data found. Redirecting to cart...');
+                window.location.href = '/Pages/Customer/fav_cart.aspx';
                 return;
             }
 
@@ -816,130 +816,145 @@
         // Populate order items
         async function populateOrderItems() {
             const container = document.getElementById('orderItems');
-            const product = checkoutData.product;
+            container.innerHTML = '';
 
-            // Fetch full product data
-            const response = await fetch('/Handlers/fire_handler.ashx', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'getProduct',
-                    productId: product.id
-                })
-            });
+            for (const item of checkoutData.items) {
+                const product = item.product;
 
-            const productDataResponse = await response.json();
-            const fullProduct = productDataResponse.product;
+                // Fetch full product data
+                const response = await fetch('/Handlers/fire_handler.ashx', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'getProduct',
+                        productId: product.id
+                    })
+                });
 
-            // Build item HTML
-            const itemHTML = `
-                <div class="order-item">
-                    <div class="item-model">
-                        <model-viewer 
-                            id="orderModel" 
-                            camera-orbit="0deg 75deg auto" 
-                            interaction-prompt="none">
-                        </model-viewer>
-                    </div>
-                    <div class="item-details">
-                        <div class="item-header">
-                            <div>
-                                <div class="item-name">${product.name}</div>
-                                <div class="item-meta">
-                                    <div class="meta-item">
-                                        <strong>ID:</strong> #${product.id}
-                                    </div>
-                                    <div class="meta-item">
-                                        <strong>Color:</strong> ${capitalizeFirst(product.color)}
-                                    </div>
-                                    <div class="meta-item">
-                                        <strong>Shape:</strong> ${fullProduct.shape || 'N/A'}
-                                    </div>
-                                    <div class="meta-item">
-                                        <strong>Qty:</strong> 1
-                                    </div>
+                const productDataResponse = await response.json();
+                const fullProduct = productDataResponse.product;
+
+                // Build meta info
+                let metaInfo = `Color: ${capitalizeFirst(product.color)}`;
+                metaInfo += ` | Size: ${product.size}`;
+
+                if (item.package && item.package.type !== 'frameOnly') {
+                    metaInfo += ` | Package: ${getPackageName(item.package.type)}`;
+                }
+                if (item.addons && item.addons.length > 0) {
+                    metaInfo += ` | Add-ons: ${item.addons.map(a => getAddonName(a.type)).join(', ')}`;
+                }
+
+                // Build item HTML
+                const itemHTML = `
+            <div class="order-item">
+                <div class="item-model">
+                    <model-viewer 
+                        id="orderModel-${product.id}" 
+                        camera-orbit="0deg 75deg auto" 
+                        interaction-prompt="none">
+                    </model-viewer>
+                </div>
+                <div class="item-details">
+                    <div class="item-header">
+                        <div>
+                            <div class="item-name">${product.name}</div>
+                            <div class="item-meta">
+                                <div class="meta-item">
+                                    <strong>ID:</strong> #${product.id}
+                                </div>
+                                <div class="meta-item">
+                                    <strong>Color:</strong> ${capitalizeFirst(product.color)}
+                                </div>
+                                <div class="meta-item">
+                                    <strong>Shape:</strong> ${fullProduct.shape || 'N/A'}
+                                </div>
+                                <div class="meta-item">
+                                    <strong>Qty:</strong> ${item.quantity}
                                 </div>
                             </div>
-                            <div class="item-price">RM ${checkoutData.prices.total.toFixed(2)}</div>
                         </div>
+                        <div class="item-price">RM ${(item.prices.total * item.quantity).toFixed(2)}</div>
+                    </div>
 
-                        <div class="item-specs">
-                            <div class="spec-row">
-                                <span class="spec-label">Frame Price:</span>
-                                <span class="spec-value">RM ${checkoutData.prices.base.toFixed(2)}</span>
-                            </div>
-                            ${checkoutData.package.price > 0 ? `
-                            <div class="spec-row">
-                                <span class="spec-label">Package (${getPackageName(checkoutData.package.type)}):</span>
-                                <span class="spec-value">RM ${checkoutData.package.price.toFixed(2)}</span>
-                            </div>
-                            ` : ''}
-                            ${checkoutData.addons.length > 0 ? `
-                            <div class="spec-row">
-                                <span class="spec-label">Add-ons (${checkoutData.addons.map(a => getAddonName(a.type)).join(', ')}):</span>
-                                <span class="spec-value">RM ${checkoutData.prices.addons.toFixed(2)}</span>
-                            </div>
-                            ` : ''}
+                    <div class="item-specs">
+                        <div class="spec-row">
+                            <span class="spec-label">Frame Price:</span>
+                            <span class="spec-value">RM ${item.prices.base.toFixed(2)}</span>
                         </div>
-
-                        ${checkoutData.prescription ? `
-                        <div class="prescription-details">
-                            <h4><i class="ri-eye-line"></i> Prescription Details</h4>
-                            <table class="prescription-table">
-                                <tr>
-                                    <td>Type:</td>
-                                    <td>${getPrescriptionTypeName(checkoutData.prescription.type)}</td>
-                                </tr>
-                                ${checkoutData.prescription.mode === 'manual' ? `
-                                <tr>
-                                    <td>Right Eye (SPH):</td>
-                                    <td>${checkoutData.prescription.rightEye.sphere || 'N/A'}</td>
-                                </tr>
-                                <tr>
-                                    <td>Left Eye (SPH):</td>
-                                    <td>${checkoutData.prescription.leftEye.sphere || 'N/A'}</td>
-                                </tr>
-                                <tr>
-                                    <td>Right Eye (CYL):</td>
-                                    <td>${checkoutData.prescription.rightEye.cylinder || 'N/A'}</td>
-                                </tr>
-                                <tr>
-                                    <td>Left Eye (CYL):</td>
-                                    <td>${checkoutData.prescription.leftEye.cylinder || 'N/A'}</td>
-                                </tr>
-                                <tr>
-                                    <td>Right Eye (AXIS):</td>
-                                    <td>${checkoutData.prescription.rightEye.axis || 'N/A'}</td>
-                                </tr>
-                                <tr>
-                                    <td>Left Eye (AXIS):</td>
-                                    <td>${checkoutData.prescription.leftEye.axis || 'N/A'}</td>
-                                </tr>
-                                <tr>
-                                    <td>PD:</td>
-                                    <td>${checkoutData.prescription.pd || 'N/A'}</td>
-                                </tr>
-                                ` : `
-                                <tr>
-                                    <td>File:</td>
-                                    <td>${checkoutData.prescription.fileName}</td>
-                                </tr>
-                                `}
-                            </table>
+                        ${item.prices.package > 0 ? `
+                        <div class="spec-row">
+                            <span class="spec-label">Package (${getPackageName(item.package.type)}):</span>
+                            <span class="spec-value">RM ${item.prices.package.toFixed(2)}</span>
+                        </div>
+                        ` : ''}
+                        ${item.prices.addons > 0 ? `
+                        <div class="spec-row">
+                            <span class="spec-label">Add-ons (${item.addons.map(a => getAddonName(a.type)).join(', ')}):</span>
+                            <span class="spec-value">RM ${item.prices.addons.toFixed(2)}</span>
                         </div>
                         ` : ''}
                     </div>
+
+                    ${item.prescription ? `
+                    <div class="prescription-details">
+                        <h4><i class="ri-eye-line"></i> Prescription Details</h4>
+                        <table class="prescription-table">
+                            <tr>
+                                <td>Type:</td>
+                                <td>${getPrescriptionTypeName(item.prescription.type)}</td>
+                            </tr>
+                            ${item.prescription.mode === 'manual' ? `
+                            <tr>
+                                <td>Right Eye (SPH):</td>
+                                <td>${item.prescription.rightEye.sphere || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <td>Left Eye (SPH):</td>
+                                <td>${item.prescription.leftEye.sphere || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <td>Right Eye (CYL):</td>
+                                <td>${item.prescription.rightEye.cylinder || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <td>Left Eye (CYL):</td>
+                                <td>${item.prescription.leftEye.cylinder || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <td>Right Eye (AXIS):</td>
+                                <td>${item.prescription.rightEye.axis || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <td>Left Eye (AXIS):</td>
+                                <td>${item.prescription.leftEye.axis || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                                <td>PD:</td>
+                                <td>${item.prescription.pd || 'N/A'}</td>
+                            </tr>
+                            ` : `
+                            <tr>
+                                <td>File:</td>
+                                <td>${item.prescription.fileName}</td>
+                            </tr>
+                            `}
+                        </table>
+                    </div>
+                    ` : ''}
                 </div>
-            `;
+            </div>
+        `;
 
-            container.innerHTML = itemHTML;
+                container.insertAdjacentHTML('beforeend', itemHTML);
 
-            // Load 3D model
-            await loadProductModel(fullProduct, product.color);
+                // Load 3D model
+                await loadProductModel(fullProduct, product.color, product.id);
+            }
         }
 
         // Load product model
-        async function loadProductModel(productData, color) {
+        async function loadProductModel(productData, color, productId) {
             const modelFiles = productData.model ? productData.model.split(', ') : [];
             const glbFiles = modelFiles.filter(f => f.toLowerCase().endsWith('.glb'));
 
@@ -956,7 +971,7 @@
             const path = `Products/${productData.productId || productData.id}/${modelFile}`;
             const modelUrl = `https://firebasestorage.googleapis.com/v0/b/opton-e4a46.firebasestorage.app/o/${encodeURIComponent(path)}?alt=media`;
 
-            const modelViewer = document.getElementById('orderModel');
+            const modelViewer = document.getElementById(`orderModel-${productId}`);
             modelViewer.src = modelUrl;
 
             modelViewer.addEventListener('load', () => {
@@ -984,20 +999,35 @@
 
         // Populate order summary
         function populateOrderSummary() {
-            document.getElementById('summaryFrame').textContent = `RM ${checkoutData.prices.base.toFixed(2)}`;
+            let totalBase = 0;
+            let totalPackage = 0;
+            let totalAddons = 0;
+            let hasPackage = false;
+            let hasAddons = false;
 
-            if (checkoutData.prices.package > 0) {
+            checkoutData.items.forEach(item => {
+                totalBase += item.prices.base * item.quantity;
+                totalPackage += item.prices.package * item.quantity;
+                totalAddons += item.prices.addons * item.quantity;
+
+                if (item.prices.package > 0) hasPackage = true;
+                if (item.prices.addons > 0) hasAddons = true;
+            });
+
+            document.getElementById('summaryFrame').textContent = `RM ${totalBase.toFixed(2)}`;
+
+            if (hasPackage) {
                 document.getElementById('summaryPackageRow').style.display = 'flex';
-                document.getElementById('summaryPackageLabel').textContent = `Package (${getPackageName(checkoutData.package.type)}):`;
-                document.getElementById('summaryPackage').textContent = `RM ${checkoutData.prices.package.toFixed(2)}`;
+                document.getElementById('summaryPackageLabel').textContent = 'Packages:';
+                document.getElementById('summaryPackage').textContent = `RM ${totalPackage.toFixed(2)}`;
             }
 
-            if (checkoutData.prices.addons > 0) {
+            if (hasAddons) {
                 document.getElementById('summaryAddonsRow').style.display = 'flex';
-                document.getElementById('summaryAddons').textContent = `RM ${checkoutData.prices.addons.toFixed(2)}`;
+                document.getElementById('summaryAddons').textContent = `RM ${totalAddons.toFixed(2)}`;
             }
 
-            const subtotal = checkoutData.prices.total;
+            const subtotal = totalBase + totalPackage + totalAddons;
             document.getElementById('summarySubtotal').textContent = `RM ${subtotal.toFixed(2)}`;
 
             const total = subtotal + SHIPPING_COST;
@@ -1102,23 +1132,13 @@
                         },
                         notes: document.getElementById('notes').value.trim()
                     },
-                    product: checkoutData.product,
-                    package: checkoutData.package,
-                    addons: checkoutData.addons,
-                    prescription: checkoutData.prescription,
+                    items: checkoutData.items,
                     payment: {
                         method: selectedPayment,
-                        amount: checkoutData.prices.total + SHIPPING_COST,
+                        amount: calculateTotalAmount(),
                         bank: selectedBank
                     },
-                    prices: {
-                        base: checkoutData.prices.base,
-                        package: checkoutData.prices.package,
-                        addons: checkoutData.prices.addons,
-                        subtotal: checkoutData.prices.total,
-                        shipping: SHIPPING_COST,
-                        total: checkoutData.prices.total + SHIPPING_COST
-                    },
+                    prices: calculatePrices(),
                     orderDate: new Date().toISOString(),
                     status: 'pending'
                 };
@@ -1143,6 +1163,39 @@
                 confirmBtn.disabled = false;
                 confirmBtn.innerHTML = '<i class="ri-secure-payment-line"></i> Confirm Payment';
             }
+        }
+
+        // Helper function to calculate total amount
+        function calculateTotalAmount() {
+            let subtotal = 0;
+            checkoutData.items.forEach(item => {
+                subtotal += item.prices.total * item.quantity;
+            });
+            return subtotal + SHIPPING_COST;
+        }
+
+        // Helper function to calculate prices breakdown
+        function calculatePrices() {
+            let totalBase = 0;
+            let totalPackage = 0;
+            let totalAddons = 0;
+
+            checkoutData.items.forEach(item => {
+                totalBase += item.prices.base * item.quantity;
+                totalPackage += item.prices.package * item.quantity;
+                totalAddons += item.prices.addons * item.quantity;
+            });
+
+            const subtotal = totalBase + totalPackage + totalAddons;
+
+            return {
+                base: totalBase,
+                package: totalPackage,
+                addons: totalAddons,
+                subtotal: subtotal,
+                shipping: SHIPPING_COST,
+                total: subtotal + SHIPPING_COST
+            };
         }
 
         // Process card payment

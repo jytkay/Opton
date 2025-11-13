@@ -226,6 +226,8 @@ namespace Opton.Pages
         [FirestoreProperty] public string userId { get; set; }
         [FirestoreProperty] public string productId { get; set; }
         [FirestoreProperty] public int quantity { get; set; }
+        [FirestoreProperty] public string colour { get; set; }
+        [FirestoreProperty] public string size { get; set; }
         [FirestoreProperty] public bool hasPrescription { get; set; }
         [FirestoreProperty] public string prescriptionDetails { get; set; }
         [FirestoreProperty] public DateTime addedOn { get; set; }

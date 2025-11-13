@@ -239,7 +239,7 @@
                 const response = await fetch('/Handlers/fire_handler.ashx', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: "getProductList" })
+                    body: JSON.stringify({ action: "getProductsList" })
                 });
 
                 const data = await response.json();
@@ -696,64 +696,52 @@
         saveBtn.onclick = async () => {
             if (!confirm("Are you sure you want to save changes?")) return;
 
-            const newProducts = [];
-            const updatedProducts = {};
-
-            // Separate new vs existing products
+            // Apply changes to the data structures
             for (const prodId in editedData) {
                 if (!prodId) {
                     // This is a new product (productId is "")
-                    const rowIndex = Object.keys(editedData).indexOf(prodId);
-                    const rowData = editedData[prodId];
-                    const newProd = {};
+                    const newProduct = products.find(p => p.productId === "");
+                    if (newProduct) {
+                        // Generate a temporary ID
+                        const maxId = products
+                            .filter(p => p.productId && p.productId.startsWith('P-'))
+                            .map(p => parseInt(p.productId.split('-')[1]) || 0)
+                            .reduce((max, num) => Math.max(max, num), 0);
+                        const newId = `P-${maxId + 1}`;
 
-                    columns.forEach(col => {
-                        if (col === "productId") return; // ignore
-                        newProd[col] = rowData[col] ?? "";
-                        if (col === "dateAdded" && !newProd[col]) {
-                            newProd[col] = new Date().toISOString().split('T')[0];
+                        // Update the product with new ID and edited data
+                        Object.assign(newProduct, editedData[prodId]);
+                        newProduct.productId = newId;
+
+                        // Update gridviewData
+                        const gridProduct = gridviewData.find(p => p.productId === "");
+                        if (gridProduct) {
+                            Object.assign(gridProduct, editedData[prodId]);
+                            gridProduct.productId = newId;
                         }
-                    });
-
-                    newProducts.push(newProd);
+                    }
                 } else {
-                    // Existing product
-                    updatedProducts[prodId] = editedData[prodId];
-                }
-            }
-
-            try {
-                const response = await fetch('/Handlers/fire_handler.ashx', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: "saveProducts",
-                        newProducts,
-                        updatedProducts
-                    })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    // Replace temp new rows with Firestore IDs
-                    if (result.newProductIds) {
-                        result.newProductIds.forEach((id, index) => {
-                            // Assign generated Firestore ID
-                            const tempProduct = products[index]; // assumes unshifted at top
-                            tempProduct.productId = id;
-                        });
+                    // Existing product - apply changes
+                    const product = products.find(p => p.productId === prodId);
+                    if (product) {
+                        Object.assign(product, editedData[prodId]);
                     }
 
-                    editedData = {};
-                    toggleSaveButton();
-                    renderTable(products);
-                    showToast("Saved!");
-                } else {
-                    alert("Failed to save changes");
+                    const gridProduct = gridviewData.find(p => p.productId === prodId);
+                    if (gridProduct) {
+                        Object.assign(gridProduct, editedData[prodId]);
+                    }
                 }
-            } catch (err) {
-                alert("Error saving changes: " + err.message);
             }
+
+            // Clear editedData and disable save button
+            editedData = {};
+            saveBtn.disabled = true;
+
+            // Re-render table
+            renderTable(products);
+
+            showToast("Saved!");
         };
 
         function validateJSONField(fieldName, value) {

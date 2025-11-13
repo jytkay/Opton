@@ -10,6 +10,12 @@ namespace Opton.Pages.Admin
     {
         protected void Page_Load(object sender, EventArgs e)
         {
+            // Check if user is staff/admin
+            if (Session["isAdmin"] == null || !(bool)Session["isAdmin"])
+            {
+                Response.Redirect("~/Pages/Customer/catalogue.aspx");
+                return;
+            }
         }
 
         [WebMethod]

@@ -14,7 +14,7 @@ namespace Opton.Pages.Admin
             // Check if user is staff/admin
             if (Session["isAdmin"] == null || !(bool)Session["isAdmin"])
             {
-                Response.Redirect("~/Pages/catalogue.aspx");
+                Response.Redirect("~/Pages/Customer/catalogue.aspx");
                 return;
             }
         }

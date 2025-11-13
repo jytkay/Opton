@@ -261,9 +261,19 @@
 
                 const makeEditable = (field, value) => {
                     if (!['status', 'staffId', 'cancelReason'].includes(field)) return `<span>${value || ''}</span>`;
-                    if (field === 'status') return `<select class="editable-field" data-field="status">${['Booked', 'Completed', 'Cancelled'].map(opt => `<option value="${opt}" ${opt === value ? 'selected' : ''}>${opt}</option>`).join('')}</select>`;
-                    if (field === 'staffId') return `<select class="editable-field" data-field="staffId">${['S-1', 'S-2', 'S-3', 'S-4'].map(opt => `<option value="${opt}" ${opt === value ? 'selected' : ''}>${opt}</option>`).join('')}</select>`;
-                    if (field === 'cancelReason') { const empty = !value || value.trim() === ''; return `<span class="editable-field${empty ? ' empty' : ''}" data-field="cancelReason" contenteditable="true">${value || ''}</span>`; }
+
+                    if (field === 'status') {
+                        return `<select class="editable-field" data-field="status">${['Booked', 'Completed', 'Cancelled'].map(opt => `<option value="${opt}" ${opt === value ? 'selected' : ''}>${opt}</option>`).join('')}</select>`;
+                    }
+
+                    if (field === 'staffId') {
+                        return `<select class="editable-field" data-field="staffId">${['S-1', 'S-2', 'S-3', 'S-4'].map(opt => `<option value="${opt}" ${opt === value ? 'selected' : ''}>${opt}</option>`).join('')}</select>`;
+                    }
+
+                    if (field === 'cancelReason') {
+                        const empty = !value || value.trim() === '';
+                        return `<span class="editable-field${empty ? ' empty' : ''}" data-field="cancelReason" contenteditable="true">${empty ? 'Click to edit' : value}</span>`;
+                    }
                 };
 
                 const formattedDate = new Intl.DateTimeFormat('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(app.dateTime));
@@ -279,9 +289,25 @@
                 `;
 
                 card.querySelectorAll('.editable-field').forEach(el => {
+                    // Handle click on empty fields
+                    if (el.classList.contains('empty') && el.getAttribute('contenteditable')) {
+                        el.addEventListener('focus', () => {
+                            if (el.textContent === 'Click to edit') {
+                                el.textContent = '';
+                                el.classList.remove('empty');
+                            }
+                        });
+                    }
+
                     const updateValue = () => {
                         const field = el.getAttribute('data-field');
                         let newValue = el.tagName === 'SELECT' ? el.value : el.innerText.trim();
+
+                        // Don't save "Click to edit" as value
+                        if (newValue === 'Click to edit') {
+                            newValue = '';
+                        }
+
                         if (hasChanges(app.appointmentId, field, newValue)) {
                             editedData[app.appointmentId] = editedData[app.appointmentId] || {};
                             editedData[app.appointmentId][field] = newValue;
@@ -305,16 +331,31 @@
 
         saveBtn.onclick = async () => {
             if (!confirm("Are you sure you want to save changes?")) return;
-            try {
-                const res = await fetch('/Handlers/fire_handler.ashx', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: "saveAppointments", updatedAppointments: editedData }) });
-                const result = await res.json();
-                if (result.success) {
-                    editedData = {};
-                    saveBtn.disabled = true;
-                    loadAppointments();
-                    if (typeof showToast === "function") showToast("Appointments saved successfully!");
-                } else alert("Failed to save changes");
-            } catch (err) { alert("Error saving changes: " + err.message); }
+
+            // Apply changes to original data
+            for (const appointmentId in editedData) {
+                if (originalData[appointmentId]) {
+                    Object.assign(originalData[appointmentId], editedData[appointmentId]);
+                }
+                // Also update the appointments array
+                const appointment = appointments.find(a => a.appointmentId === appointmentId);
+                if (appointment) {
+                    Object.assign(appointment, editedData[appointmentId]);
+                }
+            }
+
+            // Clear edited data and disable save button
+            editedData = {};
+            saveBtn.disabled = true;
+
+            // Re-render to show updated data
+            renderAppointmentCards(appointments);
+
+            if (typeof showToast === "function") {
+                showToast("Appointments saved successfully!");
+            } else {
+                alert("Appointments saved successfully!");
+            }
         };
 
         loadAppointments();

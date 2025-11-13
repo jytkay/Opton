@@ -285,11 +285,11 @@
                     <i class="ri-archive-fill step-icon"></i>
                     <span>Packed</span>
                 </div>
-                <div class="track-step" data-status="IN TRANSIT">
+                <div class="track-step" data-status="IN_TRANSIT">
                     <i class="ri-truck-fill step-icon"></i>
                     <span>In Transit</span>
                 </div>
-                <div class="track-step" data-status="OUT FOR DELIVERY">
+                <div class="track-step" data-status="OUT_FOR_DELIVERY">
                     <i class="ri-map-pin-fill step-icon"></i>
                     <span>Out for Delivery</span>
                 </div>

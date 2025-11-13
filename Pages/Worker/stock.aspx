@@ -430,7 +430,6 @@
 
         <!-- Collapsed icon -->
         <div id="collapsedIconContainer">
-            <i class="ri-information-line"></i>
         </div>
     </div>
 
@@ -575,6 +574,11 @@
         // Inline editing for Restock Requests
         const editableCols = { 8: ["Ordered", "Restocked", "Rejected"], 9: "text", 10: "text" }; // Status, Reviewed By, Remarks
         document.querySelectorAll("#restockTable tbody tr").forEach(row => {
+            // Store original values
+            row.dataset.originalStatus = row.cells[8].textContent.trim();
+            row.dataset.originalReviewedBy = row.cells[9].textContent.trim();
+            row.dataset.originalRemarks = row.cells[10].textContent.trim();
+
             Object.keys(editableCols).forEach(colIndex => {
                 const cell = row.cells[colIndex];
                 cell.addEventListener("dblclick", () => {
@@ -599,22 +603,48 @@
                     cell.appendChild(editor);
                     editor.focus();
 
-                    editor.addEventListener("blur", () => { cell.textContent = editor.value; });
-                    editor.addEventListener("keydown", e => { if (e.key === "Enter") { cell.textContent = editor.value; } });
+                    editor.addEventListener("blur", () => {
+                        cell.textContent = editor.value;
+                        checkRestockChanges();
+                    });
+                    editor.addEventListener("keydown", e => {
+                        if (e.key === "Enter") {
+                            cell.textContent = editor.value;
+                            checkRestockChanges();
+                        }
+                    });
                 });
             });
         });
 
         // Save Restock Changes
         document.getElementById("btnSaveRestock").addEventListener("click", () => {
+            if (!confirm("Are you sure you want to save changes?")) return;
+
             const rows = document.querySelectorAll("#restockTable tbody tr");
             const changes = [];
             let valid = true;
+            let hasChanges = false;
 
             rows.forEach(row => {
+                const restockId = row.cells[0].textContent.trim();
                 const status = row.cells[8].textContent.trim();
                 const reviewedBy = row.cells[9].textContent.trim();
                 const remarks = row.cells[10].textContent.trim();
+
+                // Store original values if not already stored
+                if (!row.dataset.originalStatus) {
+                    row.dataset.originalStatus = status;
+                    row.dataset.originalReviewedBy = reviewedBy;
+                    row.dataset.originalRemarks = remarks;
+                }
+
+                // Check if values changed
+                if (status !== row.dataset.originalStatus ||
+                    reviewedBy !== row.dataset.originalReviewedBy ||
+                    remarks !== row.dataset.originalRemarks) {
+                    hasChanges = true;
+                }
 
                 if (!status || !reviewedBy) {
                     valid = false;
@@ -626,7 +656,7 @@
                 }
 
                 changes.push({
-                    restockId: row.cells[0].textContent.trim(),
+                    restockId,
                     status,
                     reviewedBy,
                     remarks
@@ -638,10 +668,50 @@
                 return;
             }
 
-            console.log("Saving changes:", changes);
+            if (!hasChanges) {
+                showToast("No changes to save!");
+                return;
+            }
+
+            // Update the stored original values
+            rows.forEach(row => {
+                row.dataset.originalStatus = row.cells[8].textContent.trim();
+                row.dataset.originalReviewedBy = row.cells[9].textContent.trim();
+                row.dataset.originalRemarks = row.cells[10].textContent.trim();
+            });
+
+            // Disable save button since there are no unsaved changes
+            document.getElementById("btnSaveRestock").disabled = true;
+
+            console.log("Saved changes:", changes);
             showToast("Changes saved successfully!");
-            // TODO: send `changes` to server via fetch/AJAX
         });
+
+        // Add this new code to enable the save button when changes are made
+        const restockTable = document.getElementById("restockTable");
+        const btnSaveRestock = document.getElementById("btnSaveRestock");
+
+        // Track changes in restock table
+        const checkRestockChanges = () => {
+            const rows = document.querySelectorAll("#restockTable tbody tr");
+            let hasChanges = false;
+
+            rows.forEach(row => {
+                if (!row.dataset.originalStatus) return;
+
+                const status = row.cells[8].textContent.trim();
+                const reviewedBy = row.cells[9].textContent.trim();
+                const remarks = row.cells[10].textContent.trim();
+
+                if (status !== row.dataset.originalStatus ||
+                    reviewedBy !== row.dataset.originalReviewedBy ||
+                    remarks !== row.dataset.originalRemarks) {
+                    hasChanges = true;
+                }
+            });
+
+            btnSaveRestock.disabled = !hasChanges;
+        };
 
         loadStock();
     </script>

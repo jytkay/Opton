@@ -11,7 +11,12 @@ namespace Opton.Pages.Worker
     {
         protected void Page_Load(object sender, EventArgs e)
         {
-
+            // Check if user is staff
+            if (Session["isStaff"] == null || !(bool)Session["isStaff"])
+            {
+                Response.Redirect("~/Pages/Customer/catalogue.aspx");
+                return;
+            }
         }
     }
 }

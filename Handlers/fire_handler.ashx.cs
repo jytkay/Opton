@@ -1,5 +1,6 @@
 ﻿using FirebaseAdmin.Auth;
 using Google.Cloud.Firestore;
+using Google.Cloud.Firestore.V1;
 using Newtonsoft.Json;
 using Opton.Pages;
 using System;
@@ -82,9 +83,15 @@ namespace Opton.Handlers
                     return;
                 }
 
-                if (data?.action == "getProductList")
+                if (data?.action == "getProductsList")
                 {
                     await HandleGetProductsList(context, db);
+                    return;
+                }
+
+                if (data?.action == "getReviews")
+                {
+                    await HandleGetReviews(context, data, db);
                     return;
                 }
 
@@ -163,6 +170,12 @@ namespace Opton.Handlers
                     return;
                 }
 
+                if (data?.action == "getProductsByRetailer")
+                {
+                    await HandleGetProductsByRetailer(context, data, db);
+                    return;
+                }
+
                 // Get retailers that have products
                 if (data?.getRetailersWithProducts != null && data.getRetailersWithProducts == true)
                 {
@@ -185,6 +198,12 @@ namespace Opton.Handlers
                 if (data?.action == "getStaffList")
                 {
                     await HandleGetStaffList(context, db);
+                    return;
+                }
+
+                if (data?.action == "saveAppointment")
+                {
+                    await HandleSaveAppointment(context, data, db);
                     return;
                 }
 
@@ -408,8 +427,10 @@ namespace Opton.Handlers
 
         private async Task HandleGetProductsList(HttpContext context, FirestoreDb db)
         {
+            Debug.WriteLine("Getting products list...");
             try
             {
+                Debug.WriteLine("Attempting to retrieve products list...");
                 var snapshot = await db.Collection("Products").GetSnapshotAsync();
                 var products = snapshot.Documents.Select(doc => doc.ConvertTo<Product>()).ToList();
 
@@ -425,6 +446,94 @@ namespace Opton.Handlers
                 {
                     success = false,
                     message = ex.Message
+                }));
+            }
+        }
+
+        private async Task HandleGetReviews(HttpContext context, dynamic data, FirestoreDb db)
+        {
+            context.Response.ContentType = "application/json";
+            Debug.WriteLine("=== HandleGetReviews START ===");
+
+            try
+            {
+                string productId = data?.productId?.ToString() ?? "";
+                Debug.WriteLine($"Product ID: {productId}");
+
+                if (string.IsNullOrEmpty(productId))
+                {
+                    Debug.WriteLine("Product ID is empty");
+                    context.Response.Write(JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        message = "Product ID required",
+                        reviews = new List<Review>()
+                    }));
+                    return;
+                }
+
+                // Get reviews for this product
+                var reviewsSnapshot = await db.Collection("Reviews")
+                    .WhereEqualTo("productId", productId)
+                    .GetSnapshotAsync();
+
+                Debug.WriteLine($"Found {reviewsSnapshot.Count} reviews for product {productId}");
+
+                var reviews = new List<Review>();
+
+                foreach (var doc in reviewsSnapshot.Documents)
+                {
+                    try
+                    {
+                        var review = doc.ConvertTo<Review>();
+                        review.reviewId = doc.Id; // Set the document ID as reviewId
+
+                        reviews.Add(review);
+                        Debug.WriteLine($"Added review {doc.Id} with rating {review.rating}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error processing review document {doc.Id}: {ex.Message}");
+                        // Continue with other reviews even if one fails
+                    }
+                }
+
+                // Calculate average rating
+                double averageRating = 0;
+                if (reviews.Count > 0)
+                {
+                    averageRating = reviews.Where(r => r.rating > 0).Average(r => r.rating);
+                }
+
+                // Sort reviews by date (newest first)
+                var sortedReviews = reviews.OrderByDescending(r => r.dateTime).ToList();
+
+                var response = new
+                {
+                    success = true,
+                    reviews = sortedReviews,
+                    averageRating = Math.Round(averageRating, 1),
+                    totalReviews = reviews.Count,
+                    message = $"Found {reviews.Count} reviews"
+                };
+
+                Debug.WriteLine($"Sending response: {reviews.Count} reviews, average rating: {averageRating}");
+                context.Response.Write(JsonConvert.SerializeObject(response));
+                Debug.WriteLine("=== HandleGetReviews END (SUCCESS) ===");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"!!! ERROR in HandleGetReviews !!!");
+                Debug.WriteLine($"Message: {ex.Message}");
+                Debug.WriteLine($"Stack: {ex.StackTrace}");
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = false,
+                    message = ex.Message,
+                    reviews = new List<Review>(),
+                    averageRating = 0,
+                    totalReviews = 0
                 }));
             }
         }
@@ -867,14 +976,17 @@ namespace Opton.Handlers
 
             try
             {
-                Debug.WriteLine($"Verifying token...");
+                Debug.WriteLine("Verifying token...");
                 var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync((string)data.idToken);
                 string uid = decodedToken.Uid;
                 Debug.WriteLine($"Token verified for UID: {uid}");
 
                 string productId = data.productId?.ToString() ?? "";
                 int quantity = data.quantity != null ? (int)data.quantity : 1;
-                Debug.WriteLine($"Product ID: {productId}, Quantity: {quantity}");
+                string colour = data.colour?.ToString() ?? "Default";
+                string size = data.size?.ToString() ?? "Default";
+
+                Debug.WriteLine($"Product ID: {productId}, Quantity: {quantity}, Colour: {colour}, Size: {size}");
 
                 if (string.IsNullOrEmpty(productId))
                 {
@@ -888,11 +1000,12 @@ namespace Opton.Handlers
                 }
 
                 var cartRef = db.Collection("Cart");
-                var cartId = $"{uid}_{productId}";
+                // Include colour and size in the cartId to differentiate variants
+                var cartId = $"{uid}_{productId}_{colour}_{size}";
                 string message = "";
 
                 Debug.WriteLine($"CartID: {cartId}");
-                Debug.WriteLine($"Checking if cart item exists...");
+                Debug.WriteLine("Checking if cart item exists...");
                 var existingDoc = await cartRef.Document(cartId).GetSnapshotAsync();
                 Debug.WriteLine($"Exists: {existingDoc.Exists}");
 
@@ -901,9 +1014,8 @@ namespace Opton.Handlers
                     var existingCart = existingDoc.ConvertTo<Cart>();
                     existingCart.quantity += quantity;
                     Debug.WriteLine($"Updating existing cart: new quantity = {existingCart.quantity}");
-                    Debug.WriteLine($"Attempting to update Firestore: {JsonConvert.SerializeObject(existingCart)}");
                     await cartRef.Document(cartId).SetAsync(existingCart);
-                    Debug.WriteLine($"✓ Successfully updated in Firestore");
+                    Debug.WriteLine("✓ Successfully updated in Firestore");
                     message = "Cart updated";
                 }
                 else
@@ -913,14 +1025,16 @@ namespace Opton.Handlers
                         userId = uid,
                         productId = productId,
                         quantity = quantity,
-                        hasPrescription = false,
-                        prescriptionDetails = "",
+                        colour = colour,
+                        size = size,
+                        hasPrescription = data.hasPrescription != null ? (bool)data.hasPrescription : false,
+                        prescriptionDetails = data.prescriptionDetails != null ? data.prescriptionDetails.ToString() : "",
                         addedOn = DateTime.UtcNow
                     };
-                    Debug.WriteLine($"Creating new cart item");
-                    Debug.WriteLine($"Attempting to save to Firestore: {JsonConvert.SerializeObject(cart)}");
+
+                    Debug.WriteLine("Creating new cart item");
                     await cartRef.Document(cartId).SetAsync(cart);
-                    Debug.WriteLine($"✓ Successfully saved to Firestore");
+                    Debug.WriteLine("✓ Successfully saved to Firestore");
                     message = "Added to cart";
                 }
 
@@ -936,7 +1050,7 @@ namespace Opton.Handlers
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"!!! ERROR in HandleAddToCart !!!");
+                Debug.WriteLine("!!! ERROR in HandleAddToCart !!!");
                 Debug.WriteLine($"Message: {ex.Message}");
                 Debug.WriteLine($"Stack: {ex.StackTrace}");
                 Debug.WriteLine($"Inner: {ex.InnerException?.Message}");
@@ -1228,6 +1342,64 @@ namespace Opton.Handlers
             }
         }
 
+        private async Task HandleGetProductsByRetailer(HttpContext context, dynamic data, FirestoreDb db)
+        {
+            Debug.WriteLine("Getting products by retailer...");
+            try
+            {
+                string retailerId = data.retailerId;
+                if (string.IsNullOrEmpty(retailerId))
+                {
+                    context.Response.Write(JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        message = "Retailer ID is required"
+                    }));
+                    return;
+                }
+
+                Debug.WriteLine($"Retrieving products for retailer: {retailerId}");
+
+                // Get all products first (same as getProductsList)
+                var snapshot = await db.Collection("Products").GetSnapshotAsync();
+                var allProducts = snapshot.Documents.Select(doc => doc.ConvertTo<Product>()).ToList();
+
+                Debug.WriteLine($"Total products found: {allProducts.Count}");
+
+                // Filter products that have data for this retailer
+                var filteredProducts = allProducts.Where(product =>
+                {
+                    switch (retailerId.ToUpper())
+                    {
+                        case "R1":
+                            return product.R1 != null;
+                        case "R2":
+                            return product.R2 != null;
+                        case "R3":
+                            return product.R3 != null;
+                        default:
+                            return product.inventory != null;
+                    }
+                }).ToList();
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    products = filteredProducts
+                }));
+
+                Debug.WriteLine($"Filtered products for retailer {retailerId}: {filteredProducts.Count}");
+            }
+            catch (Exception ex)
+            {
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = false,
+                    message = ex.Message
+                }));
+            }
+        }
+
         private async Task HandleGetRetailersWithProducts(HttpContext context, FirestoreDb db)
         {
             try
@@ -1286,6 +1458,7 @@ namespace Opton.Handlers
                 }));
             }
         }
+
         private async Task HandleGetStockList(HttpContext context, FirestoreDb db)
         {
             context.Response.ContentType = "application/json";
@@ -1514,6 +1687,252 @@ namespace Opton.Handlers
                     success = false,
                     message = ex.Message
                 }));
+            }
+        }
+
+        private async Task HandleSaveAppointment(HttpContext context, dynamic data, FirestoreDb db)
+        {
+            context.Response.ContentType = "application/json";
+            Debug.WriteLine("=== HandleSaveAppointment START ===");
+
+            try
+            {
+                string storeId = data?.storeId?.ToString() ?? "";
+                string userId = data?.userId?.ToString() ?? "";
+                string email = data?.email?.ToString() ?? "";
+                string name = data?.name?.ToString() ?? "";
+                string phoneNoStr = data?.phoneNo?.ToString() ?? "";
+                string details = data?.details?.ToString() ?? "";
+                string type = data?.type?.ToString() ?? "Consultation";
+                string dateTimeStr = data?.dateTime?.ToString() ?? "";
+                string remarks = data?.remarks?.ToString() ?? "";
+                string status = data?.status?.ToString() ?? "Booked";
+
+                Debug.WriteLine($"Appointment data - Store: {storeId}, Email: {email}, Name: {name}, DateTime: {dateTimeStr}");
+
+                // Validate required fields
+                if (string.IsNullOrEmpty(storeId) || string.IsNullOrEmpty(email) ||
+                    string.IsNullOrEmpty(name) || string.IsNullOrEmpty(dateTimeStr))
+                {
+                    Debug.WriteLine("Missing required fields");
+                    context.Response.Write(JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        message = "Missing required fields"
+                    }));
+                    return;
+                }
+
+                // Parse phone number to long (remove spaces, dashes, etc.)
+                long phoneNo = 0;
+                string cleanPhone = new string(phoneNoStr.Where(char.IsDigit).ToArray());
+                if (!long.TryParse(cleanPhone, out phoneNo))
+                {
+                    Debug.WriteLine($"Invalid phone number format: {phoneNoStr}");
+                    phoneNo = 0; // Default to 0 if parsing fails
+                }
+
+                // Convert dateTime string to Firestore Timestamp
+                // Expected format: "2025-11-22T11:30:00" (ISO format)
+                Timestamp dateTimeTimestamp;
+                try
+                {
+                    DateTime dt = DateTime.Parse(dateTimeStr);
+                    // Convert to UTC if not already
+                    if (dt.Kind == DateTimeKind.Unspecified)
+                    {
+                        // Assume local time (Malaysia is UTC+8)
+                        dt = DateTime.SpecifyKind(dt, DateTimeKind.Local);
+                    }
+                    dateTimeTimestamp = Timestamp.FromDateTime(dt.ToUniversalTime());
+                    Debug.WriteLine($"Converted dateTime: {dateTimeStr} -> {dateTimeTimestamp}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error parsing dateTime: {ex.Message}");
+                    dateTimeTimestamp = Timestamp.FromDateTime(DateTime.UtcNow);
+                }
+
+                // Generate appointment ID
+                string appointmentId = await GenerateAppointmentId(db);
+                Debug.WriteLine($"Generated appointment ID: {appointmentId}");
+
+                // Create appointment data dictionary with correct field names
+                var appointmentData = new Dictionary<string, object>
+        {
+            { "appointmentId", appointmentId },
+            { "storeId", storeId },
+            { "userId", userId },
+            { "email", email },
+            { "name", name },
+            { "phoneNo", phoneNo }, // Store as number
+            { "details", details },
+            { "type", type },
+            { "dateTime", dateTimeTimestamp }, // Store as Timestamp
+            { "remarks", remarks },
+            { "status", status },
+            { "createdAt", Timestamp.FromDateTime(DateTime.UtcNow) },
+            { "cancelReason", "" }, // Add empty cancelReason field
+            { "staffId", "" } // Add empty staffId field
+        };
+
+                Debug.WriteLine($"Base appointment data created with phoneNo: {phoneNo}");
+
+                // Handle prescription data
+                if (data?.prescription != null)
+                {
+                    try
+                    {
+                        string prescriptionJson = data.prescription.ToString();
+                        Debug.WriteLine($"Raw prescription JSON: {prescriptionJson}");
+
+                        var prescriptionDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(prescriptionJson);
+
+                        // Convert nested objects properly
+                        var processedPrescription = ProcessNestedDictionary(prescriptionDict);
+                        appointmentData["prescription"] = processedPrescription;
+
+                        Debug.WriteLine("Added prescription data");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error parsing prescription: {ex.Message}");
+                        appointmentData["prescription"] = new Dictionary<string, object>
+                {
+                    { "Prescription", new Dictionary<string, object>() }
+                };
+                    }
+                }
+                else
+                {
+                    // Add empty prescription if none provided
+                    appointmentData["prescription"] = new Dictionary<string, object>
+            {
+                { "Prescription", new Dictionary<string, object>() }
+            };
+                }
+
+                // Handle holdItems data - FIXED to match Firebase structure
+                if (data?.holdItems != null)
+                {
+                    try
+                    {
+                        string holdItemsJson = data.holdItems.ToString();
+                        Debug.WriteLine($"Raw holdItems JSON: {holdItemsJson}");
+
+                        var holdItemsDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(holdItemsJson);
+
+                        // Process to ensure correct structure: {"P-3": {"Adults": "black"}}
+                        var processedHoldItems = ProcessNestedDictionary(holdItemsDict);
+                        appointmentData["holdItems"] = processedHoldItems;
+
+                        Debug.WriteLine($"Added holdItems: {holdItemsDict.Count} items");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error parsing holdItems: {ex.Message}");
+                        appointmentData["holdItems"] = new Dictionary<string, object>();
+                    }
+                }
+                else
+                {
+                    appointmentData["holdItems"] = new Dictionary<string, object>();
+                }
+
+                // Save to Firestore
+                await db.Collection("Appointments").Document(appointmentId).SetAsync(appointmentData);
+                Debug.WriteLine("✓ Successfully saved appointment to Firestore");
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    message = "Appointment saved successfully",
+                    appointmentId = appointmentId
+                }));
+
+                Debug.WriteLine("=== HandleSaveAppointment END (SUCCESS) ===");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"!!! ERROR in HandleSaveAppointment !!!");
+                Debug.WriteLine($"Message: {ex.Message}");
+                Debug.WriteLine($"Stack: {ex.StackTrace}");
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = false,
+                    message = "Error saving appointment: " + ex.Message
+                }));
+            }
+        }
+
+        // Helper method to process nested dictionaries
+        private Dictionary<string, object> ProcessNestedDictionary(Dictionary<string, object> dict)
+        {
+            var result = new Dictionary<string, object>();
+
+            foreach (var kvp in dict)
+            {
+                if (kvp.Value is Newtonsoft.Json.Linq.JObject jObj)
+                {
+                    // Convert JObject to Dictionary recursively
+                    result[kvp.Key] = ProcessNestedDictionary(jObj.ToObject<Dictionary<string, object>>());
+                }
+                else if (kvp.Value is Dictionary<string, object> nestedDict)
+                {
+                    result[kvp.Key] = ProcessNestedDictionary(nestedDict);
+                }
+                else
+                {
+                    result[kvp.Key] = kvp.Value;
+                }
+            }
+
+            return result;
+        }
+
+        private async Task<string> GenerateAppointmentId(FirestoreDb db)
+        {
+            try
+            {
+                // Get all appointments to find the highest ID
+                var appointmentsRef = db.Collection("Appointments");
+                var snapshot = await appointmentsRef.GetSnapshotAsync();
+
+                int maxId = 0;
+                foreach (var document in snapshot.Documents)
+                {
+                    var data = document.ToDictionary();
+                    if (data.ContainsKey("appointmentId"))
+                    {
+                        string appointmentId = data["appointmentId"]?.ToString() ?? "";
+                        // Extract number from "A-1", "A-2", etc.
+                        if (appointmentId.StartsWith("A-"))
+                        {
+                            string numPart = appointmentId.Substring(2);
+                            if (int.TryParse(numPart, out int num))
+                            {
+                                if (num > maxId)
+                                {
+                                    maxId = num;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Generate next ID
+                int nextId = maxId + 1;
+                Debug.WriteLine($"Generated new appointment ID: A-{nextId} (max was: {maxId})");
+                return $"A-{nextId}";
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error generating appointment ID: {ex.Message}");
+                // Fallback to timestamp-based ID if there's an error
+                string fallbackId = $"A-{DateTime.UtcNow.Ticks}";
+                Debug.WriteLine($"Using fallback ID: {fallbackId}");
+                return fallbackId;
             }
         }
 

@@ -537,8 +537,8 @@
 
 <asp:Content ID="MainContent" ContentPlaceHolderID="MainContent" runat="server">
     <div class="header-buttons">
-        <button id="tryOnButton" style="display: none;"><i class="ri-camera-fill"></i>Try-On (<span id="tryOnCount">0</span>)</button>
-        <button id="actionButton"><i class="ri-shopping-cart-2-fill"></i>Add to Cart (<span id="actionCount">0</span>)</button>
+        <button type="button" id="tryOnButton" style="display: none;"><i class="ri-camera-fill"></i>Try-On (<span id="tryOnCount">0</span>)</button>
+        <button type="button" id="actionButton"><i class="ri-shopping-cart-2-fill"></i>Add to Cart (<span id="actionCount">0</span>)</button>
     </div>
 
     <div class="header-options">
@@ -711,8 +711,8 @@
         </div>
 
         <div class="modal-actions">
-            <button class="modal-btn modal-btn-cancel" onclick="closeEditModal()">Cancel</button>
-            <button class="modal-btn modal-btn-save" onclick="saveCartItemEdit()">Save Changes</button>
+            <button type="button" class="modal-btn modal-btn-cancel" onclick="closeEditModal()">Cancel</button>
+            <button type="button" class="modal-btn modal-btn-save" onclick="saveCartItemEdit()">Save Changes</button>
         </div>
     </div>
 </div>
@@ -1173,7 +1173,8 @@
                         quantity: item.quantity,
                         package: item.package || { type: 'frameOnly', price: 0 },
                         addons: item.addons || [],
-                        color: item.color || (product.availableColors && product.availableColors[0]) || 'black'
+                        colour: item.colour || 'black',
+                        size: item.size || 'Adults'
                     });
                     cartList.appendChild(itemDiv);
                 }
@@ -1190,6 +1191,10 @@
             div.className = 'cart-item';
             div.dataset.productId = item.productId;
 
+            // Get color and size from the item data
+            const color = item.colour || 'black';
+            const size = item.size || 'Default';
+
             // Calculate total price for this item
             const packagePrice = item.package ? item.package.price : 0;
             const addonsPrice = item.addons ? item.addons.reduce((sum, addon) => sum + addon.price, 0) : 0;
@@ -1197,8 +1202,6 @@
 
             div.dataset.price = totalItemPrice;
             div.dataset.quantity = item.quantity;
-
-            const color = item.color || 'black';
 
             let mediaHtml = '';
             if (item.model) {
@@ -1219,16 +1222,16 @@
                     const modelId = `model-cart-${item.productId}`;
 
                     mediaHtml = `
-                        <model-viewer 
-                            id="${modelId}"
-                            src="${modelUrl}"
-                            camera-orbit="0deg 75deg auto"
-                            disable-pan
-                            disable-zoom
-                            interaction-prompt="none"
-                            loading="eager">
-                        </model-viewer>
-                    `;
+                <model-viewer 
+                    id="${modelId}"
+                    src="${modelUrl}"
+                    camera-orbit="0deg 75deg auto"
+                    disable-pan
+                    disable-zoom
+                    interaction-prompt="none"
+                    loading="eager">
+                </model-viewer>
+            `;
 
                     // Apply color after model loads
                     setTimeout(() => {
@@ -1248,8 +1251,10 @@
                 }
             }
 
-            // Build meta info
+            // Build meta info with color and size
             let metaInfo = `Color: ${color.charAt(0).toUpperCase() + color.slice(1)}`;
+            metaInfo += ` | Size: ${size}`;
+
             if (item.package && item.package.type !== 'frameOnly') {
                 metaInfo += ` | Package: ${getPackageName(item.package.type)}`;
             }
@@ -1258,23 +1263,23 @@
             }
 
             div.innerHTML = `
-                <input type="checkbox" onchange="toggleCartSelection('${item.productId}')" />
-                ${mediaHtml}
-                <div class="cart-details">
-                    <div class="cart-name">${item.name}</div>
-                    <div class="cart-price">RM${totalItemPrice.toFixed(2)}</div>
-                    <div class="cart-meta">${metaInfo}</div>
-                    <div class="cart-quantity">
-                        <button type="button" onclick="updateQuantity('${item.productId}', -1)">-</button>
-                        <input type="text" value="${item.quantity}" readonly />
-                        <button type="button" onclick="updateQuantity('${item.productId}', 1)">+</button>
-                    </div>
-                </div>
-                <div class="cart-actions">
-                    <i class="ri-pencil-fill cart-edit" onclick="openEditModal('${item.productId}')" title="Edit"></i>
-                    <i class="ri-delete-bin-5-fill cart-remove" onclick="removeFromCart('${item.productId}')" title="Remove"></i>
-                </div>
-            `;
+        <input type="checkbox" onchange="toggleCartSelection('${item.productId}')" />
+        ${mediaHtml}
+        <div class="cart-details">
+            <div class="cart-name">${item.name}</div>
+            <div class="cart-price">RM${totalItemPrice.toFixed(2)}</div>
+            <div class="cart-meta">${metaInfo}</div>
+            <div class="cart-quantity">
+                <button type="button" onclick="updateQuantity('${item.productId}', -1)">-</button>
+                <input type="text" value="${item.quantity}" readonly />
+                <button type="button" onclick="updateQuantity('${item.productId}', 1)">+</button>
+            </div>
+        </div>
+        <div class="cart-actions">
+            <i class="ri-pencil-fill cart-edit" onclick="openEditModal('${item.productId}')" title="Edit"></i>
+            <i class="ri-delete-bin-5-fill cart-remove" onclick="removeFromCart('${item.productId}')" title="Remove"></i>
+        </div>
+    `;
 
             return div;
         }
@@ -1418,6 +1423,19 @@
                 prescriptionSection.style.display = 'block';
             } else {
                 prescriptionSection.style.display = 'none';
+            }
+        }
+
+        function toggleModalAddon(type, price, element) {
+            const checkbox = element.querySelector('input[type="checkbox"]');
+            checkbox.checked = !checkbox.checked;
+
+            if (checkbox.checked) {
+                element.classList.add('selected');
+                modalAddons.push({ type: type, price: price });
+            } else {
+                element.classList.remove('selected');
+                modalAddons = modalAddons.filter(addon => addon.type !== type);
             }
         }
 
@@ -1699,18 +1717,78 @@
         });
 
         // Action button handler
-        actionButton.addEventListener('click', () => {
+        actionButton.addEventListener('click', async () => {
             if (currentView === 'favourites') {
                 addFavouritesToCart();
             } else {
-                // Proceed to checkout
-                if (selectedCartItems.size > 0) {
-                    // TODO: Implement checkout with selected items
-                    alert('Checkout functionality - to be implemented');
-                    // window.location.href = 'checkout.aspx';
-                } else {
+                // Proceed to checkout with selected items
+                if (selectedCartItems.size === 0) {
                     alert('Please select items to checkout');
+                    return;
                 }
+
+                // Gather selected cart items
+                const isAuth = await isAuthenticated();
+                let cartItems = [];
+
+                if (isAuth) {
+                    const idToken = await window.getIdToken();
+                    const response = await fetch('/Handlers/fire_handler.ashx', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'getCart',
+                            idToken: idToken
+                        })
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        cartItems = result.items || [];
+                    }
+                } else {
+                    cartItems = getGuestData(STORAGE_KEYS.guestCart);
+                }
+
+                // Filter to only selected items and fetch full product details
+                const selectedItems = [];
+                for (const productId of selectedCartItems) {
+                    const cartItem = cartItems.find(item => item.productId === productId);
+                    if (cartItem) {
+                        const product = await fetchProductDetails(productId);
+                        if (product) {
+                            selectedItems.push({
+                                product: {
+                                    id: productId,
+                                    name: product.name,
+                                    color: cartItem.colour || 'black',
+                                    size: cartItem.size || 'Adults',
+                                    model: product.model
+                                },
+                                package: cartItem.package || { type: 'frameOnly', price: 0 },
+                                addons: cartItem.addons || [],
+                                prescription: cartItem.prescription || null,
+                                quantity: cartItem.quantity || 1,
+                                prices: {
+                                    base: product.price,
+                                    package: (cartItem.package || {}).price || 0,
+                                    addons: (cartItem.addons || []).reduce((sum, addon) => sum + addon.price, 0),
+                                    total: product.price +
+                                        ((cartItem.package || {}).price || 0) +
+                                        ((cartItem.addons || []).reduce((sum, addon) => sum + addon.price, 0))
+                                }
+                            });
+                        }
+                    }
+                }
+
+                if (selectedItems.length === 0) {
+                    alert('Failed to load selected items');
+                    return;
+                }
+
+                // Store checkout data and navigate
+                sessionStorage.setItem('checkoutData', JSON.stringify({ items: selectedItems }));
+                window.location.href = 'checkout.aspx';
             }
         });
 
