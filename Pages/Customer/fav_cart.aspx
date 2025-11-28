@@ -1168,11 +1168,57 @@
                 const product = await fetchProductDetails(item.productId);
 
                 if (product) {
+                    // Parse package data
+                    let packageData = { type: 'frameOnly', price: 0 };
+                    if (item.package) {
+                        try {
+                            if (typeof item.package === 'string' && item.package.trim() !== '') {
+                                packageData = JSON.parse(item.package);
+                            } else if (typeof item.package === 'object') {
+                                packageData = item.package;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing package data:', e, item.package);
+                        }
+                    }
+
+                    // Parse addons data (note: check both addons and addOns)
+                    let addonsData = [];
+                    const addonsField = item.addOns || item.addons;
+                    if (addonsField) {
+                        try {
+                            if (typeof addonsField === 'string' && addonsField.trim() !== '') {
+                                addonsData = JSON.parse(addonsField);
+                            } else if (Array.isArray(addonsField)) {
+                                addonsData = addonsField;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing addons data:', e, addonsField);
+                        }
+                    }
+
+                    // Parse prescription data
+                    let prescriptionData = null;
+                    if (item.prescriptionDetails) {
+                        try {
+                            if (typeof item.prescriptionDetails === 'string' && item.prescriptionDetails.trim() !== '') {
+                                prescriptionData = JSON.parse(item.prescriptionDetails);
+                            } else if (typeof item.prescriptionDetails === 'object') {
+                                prescriptionData = item.prescriptionDetails;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing prescription data:', e, item.prescriptionDetails);
+                        }
+                    } else if (item.prescription) {
+                        prescriptionData = item.prescription;
+                    }
+
                     const itemDiv = await createCartItem({
                         ...product,
                         quantity: item.quantity,
-                        package: item.package || { type: 'frameOnly', price: 0 },
-                        addons: item.addons || [],
+                        package: packageData,
+                        addons: addonsData,
+                        prescription: prescriptionData,
                         colour: item.colour || 'black',
                         size: item.size || 'Adults'
                     });
@@ -1503,10 +1549,54 @@
             const item = cartItems.find(i => i.productId === productId);
 
             if (item) {
-                // Set current package
-                modalPackage = item.package || { type: 'frameOnly', price: 0 };
-                modalAddons = item.addons || [];
-                modalPrescription = item.prescription || null;
+                // Parse package data
+                let packageData = { type: 'frameOnly', price: 0 };
+                if (item.package) {
+                    try {
+                        if (typeof item.package === 'string') {
+                            packageData = JSON.parse(item.package);
+                        } else {
+                            packageData = item.package;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing package data:', e);
+                    }
+                }
+
+                // Parse addons data
+                let addonsData = [];
+                if (item.addons) {
+                    try {
+                        if (typeof item.addons === 'string') {
+                            addonsData = JSON.parse(item.addons);
+                        } else if (Array.isArray(item.addons)) {
+                            addonsData = item.addons;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing addons data:', e);
+                    }
+                }
+
+                // Parse prescription data
+                let prescriptionData = null;
+                if (item.prescriptionDetails) {
+                    try {
+                        if (typeof item.prescriptionDetails === 'string') {
+                            prescriptionData = JSON.parse(item.prescriptionDetails);
+                        } else {
+                            prescriptionData = item.prescriptionDetails;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing prescription data:', e);
+                    }
+                } else if (item.prescription) {
+                    prescriptionData = item.prescription;
+                }
+
+                // Set current values
+                modalPackage = packageData;
+                modalAddons = addonsData;
+                modalPrescription = prescriptionData;
 
                 // Reset modal
                 document.querySelectorAll('.modal-option').forEach(opt => {
@@ -1586,96 +1676,168 @@
         async function saveCartItemEdit() {
             if (!currentEditItem) return;
 
-            // Collect prescription data if package requires it
-            let prescriptionData = null;
-            if (modalPackage.type !== 'frameOnly') {
-                const prescriptionType = document.getElementById('modalPrescriptionType').value;
+            // Disable save button to prevent double clicks
+            const saveButton = document.querySelector('.modal-btn-save');
+            saveButton.disabled = true;
+            saveButton.textContent = 'Saving...';
 
-                if (!prescriptionType) {
-                    alert('Please select a prescription type');
-                    return;
-                }
+            try {
+                // Collect prescription data if package requires it
+                let prescriptionData = null;
+                if (modalPackage.type !== 'frameOnly') {
+                    const prescriptionType = document.getElementById('modalPrescriptionType').value;
 
-                const uploadMode = document.getElementById('modalUploadMode').checked;
+                    if (!prescriptionType) {
+                        alert('Please select a prescription type');
+                        saveButton.disabled = false;
+                        saveButton.textContent = 'Save Changes';
+                        return;
+                    }
 
-                if (uploadMode) {
-                    const fileInput = document.getElementById('modalPrescriptionFile');
-                    if (fileInput.files.length > 0) {
+                    const uploadMode = document.getElementById('modalUploadMode').checked;
+
+                    if (uploadMode) {
+                        const fileInput = document.getElementById('modalPrescriptionFile');
+                        if (fileInput.files.length > 0) {
+                            prescriptionData = {
+                                type: prescriptionType,
+                                mode: 'upload',
+                                fileName: fileInput.files[0].name
+                            };
+                        } else if (!modalPrescription || modalPrescription.mode !== 'upload') {
+                            alert('Please upload a prescription file');
+                            saveButton.disabled = false;
+                            saveButton.textContent = 'Save Changes';
+                            return;
+                        } else {
+                            // Keep existing uploaded prescription
+                            prescriptionData = modalPrescription;
+                        }
+                    } else {
+                        // Manual mode
+                        const rightSphere = document.getElementById('modalRightEyeSphere').value.trim();
+                        const leftSphere = document.getElementById('modalLeftEyeSphere').value.trim();
+
+                        if (!rightSphere || !leftSphere) {
+                            alert('Please fill in at least the Sphere values for both eyes');
+                            saveButton.disabled = false;
+                            saveButton.textContent = 'Save Changes';
+                            return;
+                        }
+
                         prescriptionData = {
                             type: prescriptionType,
-                            mode: 'upload',
-                            fileName: fileInput.files[0].name
+                            mode: 'manual',
+                            rightEye: {
+                                sphere: rightSphere,
+                                cylinder: document.getElementById('modalRightEyeCylinder').value.trim(),
+                                axis: document.getElementById('modalRightEyeAxis').value.trim()
+                            },
+                            leftEye: {
+                                sphere: leftSphere,
+                                cylinder: document.getElementById('modalLeftEyeCylinder').value.trim(),
+                                axis: document.getElementById('modalLeftEyeAxis').value.trim()
+                            },
+                            pd: document.getElementById('modalPd').value.trim()
                         };
-                    } else if (!modalPrescription || modalPrescription.mode !== 'upload') {
-                        alert('Please upload a prescription file');
-                        return;
-                    } else {
-                        // Keep existing uploaded prescription
-                        prescriptionData = modalPrescription;
                     }
-                } else {
-                    // Manual mode
-                    const rightSphere = document.getElementById('modalRightEyeSphere').value.trim();
-                    const leftSphere = document.getElementById('modalLeftEyeSphere').value.trim();
-
-                    if (!rightSphere || !leftSphere) {
-                        alert('Please fill in at least the Sphere values for both eyes');
-                        return;
-                    }
-
-                    prescriptionData = {
-                        type: prescriptionType,
-                        mode: 'manual',
-                        rightEye: {
-                            sphere: rightSphere,
-                            cylinder: document.getElementById('modalRightEyeCylinder').value.trim(),
-                            axis: document.getElementById('modalRightEyeAxis').value.trim()
-                        },
-                        leftEye: {
-                            sphere: leftSphere,
-                            cylinder: document.getElementById('modalLeftEyeCylinder').value.trim(),
-                            axis: document.getElementById('modalLeftEyeAxis').value.trim()
-                        },
-                        pd: document.getElementById('modalPd').value.trim()
-                    };
                 }
-            }
 
-            const isAuth = await isAuthenticated();
+                const isAuth = await isAuthenticated();
 
-            if (isAuth) {
-                try {
+                if (isAuth) {
+                    console.log('Authenticated user - updating cart in Firestore');
+
                     const idToken = await window.getIdToken();
-                    await fetch('/Handlers/fire_handler.ashx', {
+
+                    // Get current cart items to find the colour and size
+                    const response = await fetch('/Handlers/fire_handler.ashx', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            action: 'updateCartItem',
-                            productId: currentEditItem,
-                            package: modalPackage,
-                            addons: modalAddons,
-                            prescription: prescriptionData,
+                            action: 'getCart',
                             idToken: idToken
                         })
                     });
-                } catch (error) {
-                    console.error('Error updating cart item:', error);
-                    alert('Failed to update cart item');
-                    return;
-                }
-            } else {
-                let cartItems = getGuestData(STORAGE_KEYS.guestCart);
-                const item = cartItems.find(i => i.productId === currentEditItem);
-                if (item) {
-                    item.package = modalPackage;
-                    item.addons = modalAddons;
-                    item.prescription = prescriptionData;
-                    setGuestData(STORAGE_KEYS.guestCart, cartItems);
-                }
-            }
+                    const result = await response.json();
 
-            closeEditModal();
-            await loadCart();
+                    console.log('Get cart result:', result);
+
+                    if (!result.success) {
+                        throw new Error('Failed to get cart items: ' + result.message);
+                    }
+
+                    let cartItems = result.items || [];
+                    const currentItem = cartItems.find(i => i.productId === currentEditItem);
+
+                    if (!currentItem) {
+                        throw new Error('Cart item not found');
+                    }
+
+                    const colour = currentItem.colour || 'black';
+                    const size = currentItem.size || 'Adults';
+
+                    console.log('Current item:', currentItem);
+                    console.log('Updating with colour:', colour, 'size:', size);
+
+                    // Prepare update payload
+                    const updatePayload = {
+                        action: 'updateCartItem',
+                        productId: currentEditItem,
+                        colour: colour,
+                        size: size,
+                        package: JSON.stringify(modalPackage),
+                        addons: JSON.stringify(modalAddons),
+                        prescription: prescriptionData ? JSON.stringify(prescriptionData) : null,
+                        idToken: idToken
+                    };
+
+                    console.log('Update payload:', updatePayload);
+
+                    // Send update request
+                    const updateResponse = await fetch('/Handlers/fire_handler.ashx', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updatePayload)
+                    });
+
+                    const updateData = await updateResponse.json();
+                    console.log('Update response:', updateData);
+
+                    if (!updateData.success) {
+                        throw new Error(updateData.message || 'Failed to update cart item');
+                    }
+
+                    console.log('Cart item updated successfully in Firestore');
+                    alert('Cart item updated successfully!');
+                } else {
+                    console.log('Guest user - updating localStorage');
+
+                    // Guest user - update localStorage
+                    let cartItems = getGuestData(STORAGE_KEYS.guestCart);
+                    const itemIndex = cartItems.findIndex(i => i.productId === currentEditItem);
+
+                    if (itemIndex !== -1) {
+                        cartItems[itemIndex].package = modalPackage;
+                        cartItems[itemIndex].addons = modalAddons;
+                        cartItems[itemIndex].prescription = prescriptionData;
+                        setGuestData(STORAGE_KEYS.guestCart, cartItems);
+                        console.log('Guest cart updated in localStorage');
+                        alert('Cart item updated successfully!');
+                    } else {
+                        throw new Error('Cart item not found in localStorage');
+                    }
+                }
+
+                closeEditModal();
+                await loadCart();
+
+            } catch (error) {
+                console.error('Error saving cart item edit:', error);
+                alert('Failed to update cart item: ' + error.message);
+                saveButton.disabled = false;
+                saveButton.textContent = 'Save Changes';
+            }
         }
 
         // Update closeEditModal

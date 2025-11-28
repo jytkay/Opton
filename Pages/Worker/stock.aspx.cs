@@ -17,6 +17,16 @@ namespace Opton.Pages.Worker
                 Response.Redirect("~/Pages/Customer/catalogue.aspx");
                 return;
             }
+
+            // Pass staff ID to JavaScript
+            if (!IsPostBack)
+            {
+                string staffId = Session["StaffId"]?.ToString() ?? "S-1";
+
+                // Register JavaScript variable
+                Page.ClientScript.RegisterStartupScript(this.GetType(), "StaffInfo",
+                    $"const currentStaffId = '{staffId}';", true);
+            }
         }
     }
 }

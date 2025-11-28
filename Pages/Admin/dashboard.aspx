@@ -749,74 +749,89 @@
         saveStaffBtn.onclick = async () => {
             if (!confirm('Are you sure you want to save changes?')) return;
 
-            const newStaff = [];
-            const updatedStaff = {};
-            const deletedStaff = [];
+            try {
+                // Process each change individually
+                for (const staffId in editedStaffData) {
+                    if (editedStaffData[staffId]._deleted) {
+                        // Delete staff
+                        const res = await fetch('/Handlers/db_handler.ashx', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: "deleteStaff",
+                                staffId: staffId
+                            })
+                        });
+                        const result = await res.json();
+                        if (!result.success) {
+                            throw new Error(`Failed to delete staff ${staffId}: ${result.message}`);
+                        }
+                    } else if (!staffId) {
+                        // New staff - get all values from the row
+                        const row = document.querySelector(`tr[data-staff-id=""]`);
+                        if (row) {
+                            const staffData = {
+                                action: "addStaff",
+                                userId: row.querySelector('[data-field="userId"]')?.textContent.trim() || '',
+                                email: row.querySelector('[data-field="email"]')?.textContent.trim() || '',
+                                name: row.querySelector('[data-field="name"]')?.textContent.trim() || '',
+                                phoneNo: row.querySelector('[data-field="phoneNo"]')?.textContent.trim() || '',
+                                storeId: row.querySelector('[data-field="storeId"]')?.textContent.trim() || '',
+                                role: row.querySelector('.role-select')?.value || 'Staff'
+                            };
 
-            // Validate all edited data before saving
-            for (const staffId in editedStaffData) {
-                if (editedStaffData[staffId]._deleted) {
-                    deletedStaff.push(staffId);
-                } else if (!staffId) {
-                    // New staff - get all values from the row
-                    const row = document.querySelector(`tr[data-staff-id=""]`);
-                    if (row) {
+                            const errors = validateStaffData(staffData);
+                            if (errors.length > 0) {
+                                alert('Please fix the following errors:\n' + errors.join('\n'));
+                                return;
+                            }
+
+                            const res = await fetch('/Handlers/db_handler.ashx', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(staffData)
+                            });
+                            const result = await res.json();
+                            if (!result.success) {
+                                throw new Error(`Failed to add staff: ${result.message}`);
+                            }
+                        }
+                    } else {
+                        // Update existing staff
                         const staffData = {
-                            userId: row.querySelector('[data-field="userId"]')?.textContent.trim() || '',
-                            email: row.querySelector('[data-field="email"]')?.textContent.trim() || '',
-                            name: row.querySelector('[data-field="name"]')?.textContent.trim() || '',
-                            phoneNo: row.querySelector('[data-field="phoneNo"]')?.textContent.trim() || '',
-                            storeId: row.querySelector('[data-field="storeId"]')?.textContent.trim() || '',
-                            role: row.querySelector('.role-select')?.value || 'Staff'
+                            action: "updateStaff",
+                            staffId: staffId,
+                            ...originalStaffData[staffId],
+                            ...editedStaffData[staffId]
                         };
 
                         const errors = validateStaffData(staffData);
                         if (errors.length > 0) {
-                            alert('Please fix the following errors:\n' + errors.join('\n'));
+                            alert('Please fix the following errors for staff ' + staffId + ':\n' + errors.join('\n'));
                             return;
                         }
 
-                        newStaff.push(staffData);
+                        const res = await fetch('/Handlers/db_handler.ashx', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(staffData)
+                        });
+                        const result = await res.json();
+                        if (!result.success) {
+                            throw new Error(`Failed to update staff ${staffId}: ${result.message}`);
+                        }
                     }
-                } else {
-                    // Updated staff - merge with original data
-                    const staffData = { ...originalStaffData[staffId], ...editedStaffData[staffId] };
-
-                    const errors = validateStaffData(staffData);
-                    if (errors.length > 0) {
-                        alert('Please fix the following errors for staff ' + staffId + ':\n' + errors.join('\n'));
-                        return;
-                    }
-
-                    updatedStaff[staffId] = editedStaffData[staffId];
                 }
-            }
 
-            try {
-                const res = await fetch('/Handlers/fire_handler.ashx', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: "saveStaff",
-                        newStaff,
-                        updatedStaff,
-                        deletedStaff
-                    })
-                });
+                // Success - reset and reload
+                editedStaffData = {};
+                saveStaffBtn.disabled = true;
+                await loadStaff();
 
-                const result = await res.json();
-                if (result.success) {
-                    editedStaffData = {};
-                    saveStaffBtn.disabled = true;
-                    await loadStaff();
-
-                    if (typeof showToast === 'function') {
-                        showToast("Staff changes saved successfully!");
-                    } else {
-                        alert("Staff changes saved successfully!");
-                    }
+                if (typeof showToast === 'function') {
+                    showToast("Staff changes saved successfully!");
                 } else {
-                    alert("Failed to save changes: " + result.message);
+                    alert("Staff changes saved successfully!");
                 }
             } catch (err) {
                 alert("Error saving changes: " + err.message);

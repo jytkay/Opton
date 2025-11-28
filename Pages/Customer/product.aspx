@@ -277,6 +277,32 @@
             font-size: 20px;
         }
 
+        /* Add Review Button Styles */
+        .add-review-btn {
+            padding: 10px 20px;
+            background: var(--color-accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+            .add-review-btn:hover {
+                background: #8f6b4f;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(162, 123, 92, 0.3);
+            }
+
+            .add-review-btn i {
+                font-size: 16px;
+            }
+
         .tab {
             cursor: pointer;
             padding: 8px 0;
@@ -699,9 +725,15 @@
         </div>
 
         <div class="details-reviews">
-            <div class="tabs">
-                <span class="tab active" data-tab="details">Details</span>
-                <span class="tab" data-tab="reviews">Reviews</span>
+            <div class="tabs" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; gap: 20px;">
+                    <span class="tab active" data-tab="details">Details</span>
+                    <span class="tab" data-tab="reviews">Reviews</span>
+                </div>
+                <button type="button" id="addReviewBtn" class="add-review-btn" style="display: none;">
+                    <i class="ri-add-line"></i>
+                    Add Review
+                </button>
             </div>
             <hr style="width: 900px">
             <div class="tab-content" id="tabContent">
@@ -724,6 +756,80 @@
         </div>
     </div>
 
+    <!-- Add Review Modal -->
+    <div id="reviewModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: white; padding: 30px; border-radius: 12px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0; flex: 1;">Add Your Review</h3>
+                <button type="button" id="closeReviewModal" class="icon-btn" style="background: transparent; border: none; font-size: 24px; cursor: pointer;">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+
+            <form id="reviewForm">
+                <!-- Rating Section -->
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: bold;">Rating *</label>
+                    <div class="star-rating" style="display: flex; gap: 5px; margin-bottom: 10px;">
+                        <span class="star" data-rating="1" style="font-size: 24px; color: #ddd; cursor: pointer;">★</span>
+                        <span class="star" data-rating="2" style="font-size: 24px; color: #ddd; cursor: pointer;">★</span>
+                        <span class="star" data-rating="3" style="font-size: 24px; color: #ddd; cursor: pointer;">★</span>
+                        <span class="star" data-rating="4" style="font-size: 24px; color: #ddd; cursor: pointer;">★</span>
+                        <span class="star" data-rating="5" style="font-size: 24px; color: #ddd; cursor: pointer;">★</span>
+                    </div>
+                    <input type="hidden" id="selectedRating" name="rating" required="true">
+                    <div id="ratingError" style="color: #e74c3c; font-size: 12px; display: none;">Please select a rating</div>
+                </div>
+
+                <!-- Review Text -->
+                <div style="margin-bottom: 20px;">
+                    <label for="reviewText" style="display: block; margin-bottom: 10px; font-weight: bold;">Review *</label>
+                    <textarea id="reviewText" name="review" placeholder="Share your experience with this product..."
+                        style="width: 100%; height: 120px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; resize: vertical;"
+                        required></textarea>
+                    <div id="reviewError" style="color: #e74c3c; font-size: 12px; display: none;">Please write your review</div>
+                </div>
+
+                <!-- Size and Color (if available) -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                    <div>
+                        <label for="reviewSize" style="display: block; margin-bottom: 5px; font-weight: bold;">Size</label>
+                        <select id="reviewSize" name="size" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                            <option value="">Select size</option>
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <div>
+                        <label for="reviewColor" style="display: block; margin-bottom: 5px; font-weight: bold;">Color</label>
+                        <select id="reviewColor" name="color" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                            <option value="">Select color</option>
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Image Upload -->
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 10px; font-weight: bold;">Upload Images (Optional)</label>
+                    <input type="file" id="reviewImages" name="images" multiple accept="image/*"
+                        style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                    <div id="imagePreview" style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;"></div>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">You can upload up to 5 images</div>
+                </div>
+
+                <!-- Submit Button -->
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" id="cancelReview" class="main-btn"
+                        style="background: #6c757d; flex: 1;">
+                        Cancel</button>
+                    <button type="button" id="submitReview" class="main-btn"
+                        style="flex: 1;">
+                        Submit Review</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div style="height: 60px;"></div>
 
     <div class="loading" id="loadingDiv">
@@ -736,7 +842,7 @@
         // Make available globally for the main script
         window.colourMap = colourMap;
         window.getColour = getColour;
-</script>
+    </script>
     <script>
         let productData = null;
         let currentView = 'static';
@@ -772,6 +878,373 @@
             guestSaved: 'guestSaved',
             guestCart: 'guestCart'
         };
+
+        // Review functionality
+        let selectedRating = 0;
+        let uploadedImages = [];
+
+        // Initialize review functionality
+        function initializeReviewFunctionality() {
+            const addReviewBtn = document.getElementById('addReviewBtn');
+            const reviewModal = document.getElementById('reviewModal');
+            const closeReviewModal = document.getElementById('closeReviewModal');
+            const cancelReview = document.getElementById('cancelReview');
+            const submitReview = document.getElementById('submitReview');
+            const starRating = document.querySelectorAll('.star-rating .star');
+            const reviewImages = document.getElementById('reviewImages');
+
+            // Show modal when Add Review button is clicked
+            addReviewBtn.addEventListener('click', openReviewModal);
+
+            // Close modal events
+            closeReviewModal.addEventListener('click', closeReviewModalFunc);
+            cancelReview.addEventListener('click', closeReviewModalFunc);
+            reviewModal.addEventListener('click', function (e) {
+                if (e.target === reviewModal) {
+                    closeReviewModalFunc();
+                }
+            });
+
+            // Star rating functionality
+            starRating.forEach(star => {
+                star.addEventListener('click', function () {
+                    const rating = parseInt(this.getAttribute('data-rating'));
+                    setRating(rating);
+                });
+
+                star.addEventListener('mouseenter', function () {
+                    const rating = parseInt(this.getAttribute('data-rating'));
+                    highlightStars(rating);
+                });
+            });
+
+            document.querySelector('.star-rating').addEventListener('mouseleave', function () {
+                highlightStars(selectedRating);
+            });
+
+            // Image upload preview
+            reviewImages.addEventListener('change', handleImageUpload);
+
+            // Form submission - FIXED: use click event on button
+            submitReview.addEventListener('click', submitReviewFunc);
+
+            // Populate size and color options
+            populateReviewOptions();
+        }
+
+        function highlightStars(rating) {
+            const stars = document.querySelectorAll('.star-rating .star');
+            stars.forEach((star, index) => {
+                if (index < rating) {
+                    star.style.color = '#FFD700';
+                } else {
+                    star.style.color = '#ddd';
+                }
+            });
+        }
+
+        function setRating(rating) {
+            selectedRating = rating;
+            document.getElementById('selectedRating').value = rating;
+            highlightStars(rating);
+            document.getElementById('ratingError').style.display = 'none';
+        }
+
+        function handleImageUpload(event) {
+            const files = event.target.files;
+            const imagePreview = document.getElementById('imagePreview');
+
+            // Check total image count
+            if (uploadedImages.length + files.length > 5) {
+                alert('You can only upload up to 5 images');
+                event.target.value = '';
+                return;
+            }
+
+            Array.from(files).forEach(file => {
+                // Validate file type
+                if (!file.type.startsWith('image/')) {
+                    alert('Please upload only image files');
+                    return;
+                }
+
+                // Validate file size (max 5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                    alert('Image size should be less than 5MB');
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    uploadedImages.push({
+                        file: file,
+                        dataUrl: e.target.result
+                    });
+                    updateImagePreview();
+                };
+                reader.readAsDataURL(file);
+            });
+
+            // Reset file input
+            event.target.value = '';
+        }
+
+        function updateImagePreview() {
+            const imagePreview = document.getElementById('imagePreview');
+            imagePreview.innerHTML = '';
+
+            uploadedImages.forEach((imageData, index) => {
+                const previewItem = document.createElement('div');
+                previewItem.style.cssText = `
+            position: relative;
+            width: 80px;
+            height: 80px;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 2px solid #ddd;
+        `;
+
+                previewItem.innerHTML = `
+            <img src="${imageData.dataUrl}" 
+                 style="width: 100%; height: 100%; object-fit: cover;" 
+                 alt="Preview ${index + 1}">
+            <button type="button" 
+                    class="remove-image" 
+                    data-index="${index}"
+                    style="position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; padding: 0;">
+                ×
+            </button>
+        `;
+
+                imagePreview.appendChild(previewItem);
+            });
+
+            // Add event listeners to remove buttons
+            document.querySelectorAll('.remove-image').forEach(button => {
+                button.addEventListener('click', function () {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    removeImage(index);
+                });
+            });
+        }
+
+        function removeImage(index) {
+            uploadedImages.splice(index, 1);
+            updateImagePreview();
+        }
+
+        function populateReviewOptions() {
+            const sizeSelect = document.getElementById('reviewSize');
+            const colorSelect = document.getElementById('reviewColor');
+
+            // Clear existing options (keep first "Select" option)
+            sizeSelect.innerHTML = '<option value="">Select size</option>';
+            colorSelect.innerHTML = '<option value="">Select color</option>';
+
+            // Populate sizes if available
+            if (window.selectedSize) {
+                const option = document.createElement('option');
+                option.value = window.selectedSize;
+                option.textContent = window.selectedSize;
+                option.selected = true;
+                sizeSelect.appendChild(option);
+            }
+
+            // Populate colors
+            if (productData && productData.availableColors) {
+                productData.availableColors.forEach(color => {
+                    const option = document.createElement('option');
+                    option.value = color;
+                    option.textContent = color.charAt(0).toUpperCase() + color.slice(1);
+                    if (color === window.selectedColor) {
+                        option.selected = true;
+                    }
+                    colorSelect.appendChild(option);
+                });
+            }
+        }
+
+        async function submitReviewFunc() {
+            const rating = selectedRating;
+            const reviewText = document.getElementById('reviewText').value.trim();
+            const size = document.getElementById('reviewSize').value;
+            const color = document.getElementById('reviewColor').value;
+
+            console.log('Submitting review:', { rating, reviewText, size, color, imagesCount: uploadedImages.length });
+
+            // Validation
+            let isValid = true;
+
+            if (!rating) {
+                document.getElementById('ratingError').style.display = 'block';
+                isValid = false;
+            }
+
+            if (!reviewText) {
+                document.getElementById('reviewError').style.display = 'block';
+                isValid = false;
+            }
+
+            if (!isValid) {
+                return;
+            }
+
+            // Get email from user
+            const userEmail = prompt('Please enter your email address:');
+            if (!userEmail || !userEmail.includes('@')) {
+                alert('A valid email address is required to submit a review');
+                return;
+            }
+
+            const submitBtn = document.getElementById('submitReview');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+
+            try {
+                const productId = getProductIdFromURL();
+                const userId = 'guest_' + Date.now(); // Simple guest ID
+
+                // Upload images first if any
+                let mediaFileNames = [];
+                if (uploadedImages.length > 0) {
+                    console.log('Uploading images...');
+                    mediaFileNames = await uploadReviewImages(productId);
+                    console.log('Images uploaded:', mediaFileNames);
+                }
+
+                // Submit review data
+                const reviewData = {
+                    action: 'addReview',
+                    productId: productId,
+                    userId: userId,
+                    email: userEmail,
+                    rating: rating,
+                    review: reviewText,
+                    size: size || '',
+                    colour: color || '',
+                    media: mediaFileNames.join(', ')
+                };
+
+                console.log('Submitting review data:', reviewData);
+
+                const response = await fetch('/Handlers/db_handler.ashx', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reviewData)
+                });
+
+                const result = await response.json();
+                console.log('Review submission result:', result);
+
+                if (result.success) {
+                    showNotification('Review submitted successfully!');
+                    closeReviewModalFunc();
+
+                    // Reload reviews if we're on the reviews tab
+                    const activeTab = document.querySelector('.tab.active');
+                    if (activeTab && activeTab.getAttribute('data-tab') === 'reviews') {
+                        await loadReviews();
+                    }
+                } else {
+                    throw new Error(result.message || 'Failed to submit review');
+                }
+
+            } catch (error) {
+                console.error('Error submitting review:', error);
+                alert('Failed to submit review: ' + error.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Review';
+            }
+        }
+
+        async function uploadReviewImages(productId) {
+            const mediaFileNames = [];
+
+            for (let i = 0; i < uploadedImages.length; i++) {
+                const imageData = uploadedImages[i];
+                const timestamp = Date.now();
+                const originalFileName = imageData.file.name;
+                const fileExtension = originalFileName.substring(originalFileName.lastIndexOf('.'));
+                const fileName = `review_${timestamp}_${i}${fileExtension}`; // Preserve extension
+
+                try {
+                    console.log(`Uploading image ${i + 1}/${uploadedImages.length}: ${fileName}`);
+
+                    // Convert data URL to blob
+                    const response = await fetch(imageData.dataUrl);
+                    const blob = await response.blob();
+
+                    // Create form data for upload
+                    const formData = new FormData();
+                    formData.append('action', 'uploadReviewImage');
+                    formData.append('productId', productId);
+                    formData.append('fileName', fileName);
+                    formData.append('image', blob, fileName);
+
+                    const uploadResponse = await fetch('/Handlers/storage_handler.ashx', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const uploadResult = await uploadResponse.json();
+                    console.log(`Upload result for ${fileName}:`, uploadResult);
+
+                    if (uploadResult.success) {
+                        mediaFileNames.push(fileName); // Store the actual uploaded filename
+                    } else {
+                        console.error('Failed to upload image:', uploadResult.message);
+                    }
+
+                } catch (error) {
+                    console.error('Error uploading image:', error);
+                }
+            }
+
+            return mediaFileNames;
+        }
+
+        function resetReviewForm() {
+            // Reset form fields manually instead of using .reset()
+            document.getElementById('reviewText').value = '';
+            document.getElementById('reviewSize').selectedIndex = 0;
+            document.getElementById('reviewColor').selectedIndex = 0;
+            document.getElementById('reviewImages').value = '';
+
+            selectedRating = 0;
+            uploadedImages = [];
+
+            // Reset star rating
+            highlightStars(0);
+
+            // Clear image preview
+            document.getElementById('imagePreview').innerHTML = '';
+
+            // Hide error messages
+            document.getElementById('ratingError').style.display = 'none';
+            document.getElementById('reviewError').style.display = 'none';
+        }
+
+        function openReviewModal() {
+            const reviewModal = document.getElementById('reviewModal');
+            reviewModal.style.display = 'flex';
+            document.body.style.overflow = 'hidden';
+
+            // Repopulate options in case color/size changed
+            populateReviewOptions();
+        }
+
+        function closeReviewModalFunc() {
+            const reviewModal = document.getElementById('reviewModal');
+            reviewModal.style.display = 'none';
+            document.body.style.overflow = '';
+            resetReviewForm();
+        }
+
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function () {
+            initializeReviewFunctionality();
+        });
 
         async function getCurrentUserId() {
             if (typeof window.getCurrentUser === 'function') {
@@ -3306,6 +3779,7 @@
                 const date = review.dateTime ? new Date(review.dateTime).toLocaleDateString() : 'Unknown date';
                 const reviewText = review.review || 'No review text provided.';
                 const userName = review.userName || review.email || 'Anonymous User';
+                const guestBadge = review.isGuest ? ' <span style="background: #e0e0e0; padding: 2px 8px; border-radius: 12px; font-size: 11px; color: #666;">Guest</span>' : '';
 
                 // Add size and color information if available
                 const sizeInfo = review.size ? `<div style="font-size: 12px; color: #666; margin-bottom: 5px;">
@@ -3367,7 +3841,7 @@
             <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px; background: #f9f9f9;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
                     <div style="flex: 1;">
-                        <strong style="font-size: 16px; display: block; margin-bottom: 5px;">${userName}</strong>
+                        <strong style="font-size: 16px; display: block; margin-bottom: 5px;">${userName}${guestBadge}</strong>
                         ${sizeInfo}
                         ${colorInfo}
                     </div>
@@ -3844,11 +4318,19 @@
                 this.classList.add('active');
 
                 const tabName = this.getAttribute('data-tab');
+                const addReviewBtn = document.getElementById('addReviewBtn');
+
                 if (tabName === 'details') {
+                    // Hide review button in details tab
+                    if (addReviewBtn) addReviewBtn.style.display = 'none';
+
                     // Always show product description in details tab
                     document.getElementById('tabContent').innerHTML =
                         `<p>${productData.description || 'No description available'}</p>`;
                 } else if (tabName === 'reviews') {
+                    // Show review button in reviews tab
+                    if (addReviewBtn) addReviewBtn.style.display = 'inline-flex';
+
                     // Show loading message while fetching reviews
                     document.getElementById('tabContent').innerHTML = '<p>Loading reviews...</p>';
 

@@ -275,19 +275,16 @@ namespace Opton.Handlers
 
                 // Prepare order document
                 var orderDoc = new Dictionary<string, object>
-            {
-                { "orderId", orderId },
-                { "customer", orderData["customer"] },
-                { "product", orderData["product"] },
-                { "package", orderData["package"] },
-                { "addons", orderData["addons"] },
-                { "prescription", orderData.ContainsKey("prescription") ? orderData["prescription"] : null },
-                { "payment", orderData["payment"] },
-                { "prices", orderData["prices"] },
-                { "status", "pending" },
-                { "createdAt", FieldValue.ServerTimestamp },
-                { "updatedAt", FieldValue.ServerTimestamp }
-            };
+        {
+            { "orderId", orderId },
+            { "customer", orderData["customer"] },
+            { "items", orderData["items"] },  // Now stores items array
+            { "payment", orderData["payment"] },
+            { "prices", orderData["prices"] },
+            { "status", "pending" },
+            { "createdAt", FieldValue.ServerTimestamp },
+            { "updatedAt", FieldValue.ServerTimestamp }
+        };
 
                 // Save to Firestore
                 var docRef = await db.Collection("Orders").AddAsync(orderDoc);
@@ -298,21 +295,21 @@ namespace Opton.Handlers
                 await SendOrderConfirmationEmail(orderData, orderId);
 
                 return new Dictionary<string, object>
-            {
-                { "success", true },
-                { "orderId", orderId },
-                { "firestoreId", docRef.Id }
-            };
+        {
+            { "success", true },
+            { "orderId", orderId },
+            { "firestoreId", docRef.Id }
+        };
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[ORDER ERROR] {ex}");
                 return new Dictionary<string, object>
-            {
-                { "success", false },
-                { "message", ex.Message },
-                { "stackTrace", ex.StackTrace }
-            };
+        {
+            { "success", false },
+            { "message", ex.Message },
+            { "stackTrace", ex.StackTrace }
+        };
             }
         }
 
@@ -322,46 +319,76 @@ namespace Opton.Handlers
             {
                 var keys = await GetApiKeysAsync();
                 var customer = (Dictionary<string, object>)orderData["customer"];
-                var product = (Dictionary<string, object>)orderData["product"];
                 var prices = (Dictionary<string, object>)orderData["prices"];
 
                 string customerEmail = customer["email"].ToString();
                 string customerName = customer["fullName"].ToString();
+
+                // Build items list HTML
+                StringBuilder itemsHtml = new StringBuilder();
+
+                if (orderData.ContainsKey("items") && orderData["items"] != null)
+                {
+                    var itemsList = orderData["items"] as System.Collections.ArrayList;
+
+                    if (itemsList != null)
+                    {
+                        foreach (var itemObj in itemsList)
+                        {
+                            var item = itemObj as Dictionary<string, object>;
+                            if (item != null && item.ContainsKey("product"))
+                            {
+                                var product = item["product"] as Dictionary<string, object>;
+                                if (product != null && product.ContainsKey("name"))
+                                {
+                                    itemsHtml.Append($"<p style='margin: 5px 0;'>• {product["name"]}</p>");
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fallback if no items
+                if (itemsHtml.Length == 0)
+                {
+                    itemsHtml.Append("<p style='margin: 5px 0;'>• Your order items</p>");
+                }
 
                 // Create email content
                 var emailPayload = new
                 {
                     personalizations = new[]
                     {
-                    new
-                    {
-                        to = new[] { new { email = customerEmail, name = customerName } },
-                        subject = $"Order Confirmation - {orderId}"
-                    }
-                },
+                new
+                {
+                    to = new[] { new { email = customerEmail, name = customerName } },
+                    subject = $"Order Confirmation - {orderId}"
+                }
+            },
                     from = new { email = "opton5854@gmail.com", name = "Opton Store" },
                     content = new[]
                     {
-                    new
-                    {
-                        type = "text/html",
-                        value = $@"
-                            <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
-                                <h2 style='color: #2C3639;'>Order Confirmation</h2>
-                                <p>Hi {customerName},</p>
-                                <p>Thank you for your order! Your order has been confirmed.</p>
-                                
-                                <div style='background-color: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;'>
-                                    <p style='margin: 5px 0;'><strong>Order ID:</strong> {orderId}</p>
-                                    <p style='margin: 5px 0;'><strong>Product:</strong> {product["name"]}</p>
-                                    <p style='margin: 5px 0;'><strong>Total:</strong> RM {Convert.ToDecimal(prices["total"]):F2}</p>
-                                </div>
-                                
-                                <p>We'll send you another email when your order ships.</p>
-                                <p style='color: #666; font-size: 14px; margin-top: 30px;'>Thank you for choosing Opton!</p>
-                            </div>"
-                    }
+                new
+                {
+                    type = "text/html",
+                    value = $@"
+                        <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>
+                            <h2 style='color: #2C3639;'>Order Confirmation</h2>
+                            <p>Hi {customerName},</p>
+                            <p>Thank you for your order! Your order has been confirmed.</p>
+                            
+                            <div style='background-color: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;'>
+                                <p style='margin: 5px 0;'><strong>Order ID:</strong> {orderId}</p>
+                                <p style='margin: 5px 0;'><strong>Item(s):</strong></p>
+                                {itemsHtml}
+                                <p style='margin: 5px 0;'><strong>Total:</strong> RM {Convert.ToDecimal(prices["total"]):F2}</p>
+                            </div>
+                            
+                            <p>We'll send you another email when your order ships.</p>
+                            <p style='color: #666; font-size: 14px; margin-top: 30px;'>Thank you for choosing Opton!</p>
+                        </div>"
                 }
+            }
                 };
 
                 using (var client = new HttpClient())
@@ -378,7 +405,6 @@ namespace Opton.Handlers
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[ORDER EMAIL ERROR] {ex}");
-                // Don't throw - email failure shouldn't block order creation
             }
         }
 

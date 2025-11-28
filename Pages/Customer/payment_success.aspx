@@ -64,6 +64,10 @@
 
                     if (pendingOrderData) {
                         const orderData = JSON.parse(pendingOrderData);
+
+                        console.log('Order Data Keys:', Object.keys(orderData));
+                        console.log('Full Order Data:', orderData);
+
                         orderData.payment.transactionId = paymentIntent;
                         orderData.payment.status = 'paid';
                         await createOrderAfterPayment(orderData);
@@ -81,12 +85,25 @@
 
         async function createOrderAfterPayment(orderData) {
             try {
+                // Transform ALL items into the structure backend expects
+                const transformedData = {
+                    customer: orderData.customer,
+                    items: orderData.items.map(item => ({
+                        product: item.product || {},
+                        package: item.package || {},
+                        addons: item.addons || [],
+                        prescription: item.prescription || null
+                    })),
+                    payment: orderData.payment,
+                    prices: orderData.prices
+                };
+
                 const response = await fetch('/Handlers/payment_handler.ashx', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         action: 'createOrder',
-                        orderData: orderData
+                        orderData: transformedData
                     })
                 });
 

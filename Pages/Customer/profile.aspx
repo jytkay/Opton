@@ -428,12 +428,17 @@
             }
 
             try {
-                const response = await fetch('/Pages/get_user_data.ashx', {
+                const response = await fetch('/Handlers/fire_handler.ashx', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ idToken: await user.getIdToken() })
+                    body: JSON.stringify({
+                        action: 'getUserProfile',
+                        idToken: await user.getIdToken()
+                    })
                 });
                 const data = await response.json();
+
+                console.log('User profile data:', data);
 
                 if (data.success) {
                     document.getElementById('nameDisplay').textContent = data.name || 'Not set';
@@ -583,70 +588,84 @@
         window.saveProfile = async function () {
             if (!currentUser) return;
 
-            const name = document.getElementById('nameInput').value.trim();
-            const countryCode = document.getElementById('countryCode').value;
-            const phoneNumber = document.getElementById('phoneInput').value.trim();
-            const address = document.getElementById('addressInput').value.trim();
-            const fullPhone = phoneNumber ? countryCode + ' ' + phoneNumber : '';
-
-            // Collect prescription data
-            let newPrescriptionData = null;
-            const prescriptionType = document.getElementById('prescriptionType').value;
-
-            if (prescriptionType) {
-                const uploadMode = document.getElementById('uploadMode').checked;
-
-                if (uploadMode) {
-                    const fileInput = document.getElementById('prescriptionFile');
-                    if (fileInput.files.length > 0) {
-                        const file = fileInput.files[0];
-                        try {
-                            const base64 = await fileToBase64(file);
-                            newPrescriptionData = {
-                                type: prescriptionType,
-                                mode: 'upload',
-                                fileName: file.name,
-                                fileType: file.type,
-                                data: base64
-                            };
-                        } catch (error) {
-                            alert('Error processing file: ' + error.message);
-                            return;
-                        }
-                    } else {
-                        // Keep existing prescription if no new file
-                        newPrescriptionData = prescriptionData;
-                    }
-                } else {
-                    // Manual mode
-                    const rightSphere = document.getElementById('rightEyeSphere').value.trim();
-                    const leftSphere = document.getElementById('leftEyeSphere').value.trim();
-
-                    if (rightSphere || leftSphere) {
-                        newPrescriptionData = {
-                            type: prescriptionType,
-                            mode: 'manual',
-                            rightEye: {
-                                sphere: rightSphere,
-                                cylinder: document.getElementById('rightEyeCylinder').value.trim(),
-                                axis: document.getElementById('rightEyeAxis').value.trim()
-                            },
-                            leftEye: {
-                                sphere: leftSphere,
-                                cylinder: document.getElementById('leftEyeCylinder').value.trim(),
-                                axis: document.getElementById('leftEyeAxis').value.trim()
-                            },
-                            pd: document.getElementById('pd').value.trim()
-                        };
-                    }
-                }
-            }
+            const saveBtn = document.getElementById('saveBtn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
 
             try {
-                const response = await fetch('/Pages/update_user_data.ashx', {
+                const name = document.getElementById('nameInput').value.trim();
+                const countryCode = document.getElementById('countryCode').value;
+                const phoneNumber = document.getElementById('phoneInput').value.trim();
+                const address = document.getElementById('addressInput').value.trim();
+                const fullPhone = phoneNumber ? countryCode + ' ' + phoneNumber : '';
+
+                // Collect prescription data
+                let newPrescriptionData = null;
+                const prescriptionType = document.getElementById('prescriptionType').value;
+
+                if (prescriptionType) {
+                    const uploadMode = document.getElementById('uploadMode').checked;
+
+                    if (uploadMode) {
+                        const fileInput = document.getElementById('prescriptionFile');
+                        if (fileInput.files.length > 0) {
+                            const file = fileInput.files[0];
+                            try {
+                                const base64 = await fileToBase64(file);
+                                newPrescriptionData = {
+                                    type: prescriptionType,
+                                    mode: 'upload',
+                                    fileName: file.name,
+                                    fileType: file.type,
+                                    data: base64
+                                };
+                            } catch (error) {
+                                alert('Error processing file: ' + error.message);
+                                saveBtn.disabled = false;
+                                saveBtn.innerHTML = '<i class="ri-save-line"></i> Save Changes';
+                                return;
+                            }
+                        } else {
+                            // Keep existing prescription if no new file
+                            newPrescriptionData = prescriptionData;
+                        }
+                    } else {
+                        // Manual mode
+                        const rightSphere = document.getElementById('rightEyeSphere').value.trim();
+                        const leftSphere = document.getElementById('leftEyeSphere').value.trim();
+
+                        if (rightSphere || leftSphere) {
+                            newPrescriptionData = {
+                                type: prescriptionType,
+                                mode: 'manual',
+                                rightEye: {
+                                    sphere: rightSphere,
+                                    cylinder: document.getElementById('rightEyeCylinder').value.trim(),
+                                    axis: document.getElementById('rightEyeAxis').value.trim()
+                                },
+                                leftEye: {
+                                    sphere: leftSphere,
+                                    cylinder: document.getElementById('leftEyeCylinder').value.trim(),
+                                    axis: document.getElementById('leftEyeAxis').value.trim()
+                                },
+                                pd: document.getElementById('pd').value.trim()
+                            };
+                        }
+                    }
+                }
+
+                console.log('Saving profile with data:', {
+                    name,
+                    phoneNo: fullPhone,
+                    address,
+                    prescription: newPrescriptionData
+                });
+
+                const response = await fetch('/Handlers/db_handler.ashx', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        action: 'updateUserProfile',
                         idToken: await currentUser.getIdToken(),
                         name: name,
                         phoneNo: fullPhone,
@@ -656,11 +675,13 @@
                 });
 
                 const data = await response.json();
+                console.log('Save response:', data);
 
                 if (data.success) {
                     alert('Profile updated successfully!');
                     prescriptionData = newPrescriptionData;
 
+                    // Update display values
                     document.getElementById('nameDisplay').textContent = name || 'Not set';
                     document.getElementById('phoneDisplay').textContent = fullPhone || 'Not set';
                     document.getElementById('addressDisplay').textContent = address || 'Not set';
@@ -671,7 +692,11 @@
                     alert('Error updating profile: ' + data.message);
                 }
             } catch (error) {
+                console.error('Error saving profile:', error);
                 alert('Error saving profile: ' + error.message);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="ri-save-line"></i> Save Changes';
             }
         };
 

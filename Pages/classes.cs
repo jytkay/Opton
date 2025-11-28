@@ -191,6 +191,7 @@ namespace Opton.Pages
         public string orderId { get; set; }
 
         [FirestoreProperty] public string userId { get; set; } = "";
+        [FirestoreProperty] public string name { get; set; } = "";
         [FirestoreProperty] public string email { get; set; } = "";
         [FirestoreProperty] public string phoneNo { get; set; } = "";
         [FirestoreProperty] public string address { get; set; } = "";
@@ -223,13 +224,15 @@ namespace Opton.Pages
     [FirestoreData]
     public class Cart
     {
-        [FirestoreProperty] public string userId { get; set; }
+        [FirestoreProperty] public string userId { get; set; } = "";
         [FirestoreProperty] public string productId { get; set; }
         [FirestoreProperty] public int quantity { get; set; }
-        [FirestoreProperty] public string colour { get; set; }
-        [FirestoreProperty] public string size { get; set; }
-        [FirestoreProperty] public bool hasPrescription { get; set; }
-        [FirestoreProperty] public string prescriptionDetails { get; set; }
+        [FirestoreProperty] public string colour { get; set; } = "";
+        [FirestoreProperty] public string size { get; set; } = "";
+        [FirestoreProperty] public bool hasPrescription { get; set; } = false;
+        [FirestoreProperty] public string prescriptionDetails { get; set; } = "";
+        [FirestoreProperty] public string package { get; set; } = "";
+        [FirestoreProperty] public string addOns { get; set; } = "";
         [FirestoreProperty] public DateTime addedOn { get; set; }
     }
 

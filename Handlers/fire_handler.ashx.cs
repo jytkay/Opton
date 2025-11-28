@@ -101,6 +101,12 @@ namespace Opton.Handlers
                     return;
                 }
 
+                if (data?.action == "getUserProfile")
+                {
+                    await HandleGetUserProfile(context, data, db);
+                    return;
+                }
+
                 if (data?.action == "getOrdersList")
                 {
                     await HandleGetOrdersList(context, db);
@@ -163,6 +169,12 @@ namespace Opton.Handlers
                     return;
                 }
 
+                if (data?.action == "updateCartItem")
+                {
+                    await HandleUpdateCartItem(context, data, db);
+                    return;
+                }
+
                 // Check for Retailers
                 if (data?.getRetailers != null && data.getRetailers == true)
                 {
@@ -180,6 +192,12 @@ namespace Opton.Handlers
                 if (data?.getRetailersWithProducts != null && data.getRetailersWithProducts == true)
                 {
                     await HandleGetRetailersWithProducts(context, db);
+                    return;
+                }
+
+                if (data?.action == "getAppointmentTimes")
+                {
+                    await HandleGetAppointmentTimes(context, data, db);
                     return;
                 }
 
@@ -609,66 +627,206 @@ namespace Opton.Handlers
             }
         }
 
+        private async Task HandleGetUserProfile(HttpContext context, dynamic data, FirestoreDb db)
+        {
+            context.Response.ContentType = "application/json";
+            Debug.WriteLine("=== HandleGetUserProfile START ===");
+
+            if (data.idToken == null)
+            {
+                Debug.WriteLine("No idToken provided");
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = false,
+                    message = "Authentication required"
+                }));
+                return;
+            }
+
+            try
+            {
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync((string)data.idToken);
+                string uid = decodedToken.Uid;
+                Debug.WriteLine($"Token verified for UID: {uid}");
+
+                var userDoc = await db.Collection("Users").Document(uid).GetSnapshotAsync();
+
+                if (!userDoc.Exists)
+                {
+                    Debug.WriteLine("User document not found");
+                    context.Response.Write(JsonConvert.SerializeObject(new
+                    {
+                        success = true,
+                        name = "",
+                        phoneNo = "",
+                        address = "",
+                        prescription = ""
+                    }));
+                    return;
+                }
+
+                var userData = userDoc.ToDictionary();
+
+                Debug.WriteLine($"Retrieved user data: {JsonConvert.SerializeObject(userData)}");
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    name = userData.ContainsKey("name") ? userData["name"]?.ToString() : "",
+                    phoneNo = userData.ContainsKey("phoneNo") ? userData["phoneNo"]?.ToString() : "",
+                    address = userData.ContainsKey("address") ? userData["address"]?.ToString() : "",
+                    prescription = userData.ContainsKey("prescription") ? userData["prescription"]?.ToString() : ""
+                }));
+
+                Debug.WriteLine("=== HandleGetUserProfile END (SUCCESS) ===");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"!!! ERROR in HandleGetUserProfile !!!");
+                Debug.WriteLine($"Message: {ex.Message}");
+                Debug.WriteLine($"Stack: {ex.StackTrace}");
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = false,
+                    message = ex.Message
+                }));
+            }
+        }
+
         private async Task HandleGetOrdersList(HttpContext context, FirestoreDb db)
         {
             try
             {
                 var snapshot = await db.Collection("Orders").GetSnapshotAsync();
 
-                var orders = snapshot.Documents.Select(doc =>
+                var orders = new List<Dictionary<string, object>>();
+
+                foreach (var doc in snapshot.Documents)
                 {
-                    var raw = doc.ToDictionary(); // RAW FIRESTORE DICTIONARY
-                    raw["orderId"] = doc.Id;
+                    var raw = doc.ToDictionary();
+                    var order = new Dictionary<string, object>();
 
-                    // ✅ FORMAT orderTime + arrivalTime into readable strings
-                    if (raw.ContainsKey("orderTime") && raw["orderTime"] is Timestamp ot)
-                        raw["orderTime"] = ot.ToDateTime().ToString("yyyy-MM-dd HH:mm:ss");
+                    // Always set orderId
+                    order["orderId"] = doc.Id;
 
-                    if (raw.ContainsKey("arrivalTime") && raw["arrivalTime"] is Timestamp at)
-                        raw["arrivalTime"] = at.ToDateTime().ToString("yyyy-MM-dd HH:mm:ss");
+                    // Debug: log the raw structure to see what we're working with
+                    Debug.WriteLine($"Processing order {doc.Id}");
+                    Debug.WriteLine($"Raw keys: {string.Join(", ", raw.Keys)}");
 
-                    // ✅ Ensure items stay structured
-                    if (raw.ContainsKey("items") && raw["items"] is Dictionary<string, object> itemsDict)
+                    // Check structure type
+                    bool hasCustomer = raw.ContainsKey("customer") && raw["customer"] is Dictionary<string, object>;
+                    bool hasItemsArray = raw.ContainsKey("items") && raw["items"] is List<object>;
+
+                    if (hasCustomer && hasItemsArray)
                     {
-                        var structuredItems = new Dictionary<string, object>();
+                        Debug.WriteLine("Detected NEW order structure");
+                        // NEW STRUCTURE
+                        var customer = raw["customer"] as Dictionary<string, object>;
 
-                        foreach (var kv in itemsDict) // kv.Key = productId
+                        // Extract customer info
+                        if (customer != null)
                         {
-                            string productId = kv.Key;
-                            if (kv.Value is Dictionary<string, object> itemDict)
+                            order["email"] = GetStringValue(customer, "email");
+                            order["phoneNo"] = GetStringValue(customer, "phone");
+
+                            // Build address
+                            string address = "";
+                            if (customer.ContainsKey("address") && customer["address"] is Dictionary<string, object> addressDict)
                             {
-                                // Keep Adults/Kids, package, addOn, prescription intact
-                                var newItem = new Dictionary<string, object>();
-                                foreach (var key in itemDict.Keys)
+                                address = BuildAddressString(addressDict);
+                            }
+                            else
+                            {
+                                // Build from individual fields
+                                address = $"{GetStringValue(customer, "street")}, {GetStringValue(customer, "city")}, {GetStringValue(customer, "state")} {GetStringValue(customer, "postalCode")}";
+                            }
+                            order["address"] = address.Trim(new char[] { ' ', ',' });
+                        }
+
+                        // Extract payment info
+                        if (raw.ContainsKey("payment") && raw["payment"] is Dictionary<string, object> payment)
+                        {
+                            order["paymentType"] = GetStringValue(payment, "method");
+                            order["status"] = GetStringValue(payment, "status");
+                        }
+                        else
+                        {
+                            order["paymentType"] = "Unknown";
+                            order["status"] = "Unknown";
+                        }
+
+                        // Process items array
+                        var itemsDict = new Dictionary<string, object>();
+                        var priceDict = new Dictionary<string, object>();
+
+                        if (raw["items"] is List<object> itemsList)
+                        {
+                            foreach (var itemObj in itemsList)
+                            {
+                                if (itemObj is Dictionary<string, object> item)
                                 {
-                                    newItem[key] = itemDict[key];
+                                    ProcessNewStructureItem(item, itemsDict, priceDict);
                                 }
-                                structuredItems[productId] = newItem;
                             }
                         }
 
-                        raw["items"] = structuredItems;
-                    }
+                        order["items"] = itemsDict;
+                        order["price"] = priceDict;
 
-                    // ✅ Ensure price stays structured
-                    if (raw.ContainsKey("price") && raw["price"] is Dictionary<string, object> priceDict)
-                    {
-                        var structuredPrices = new Dictionary<string, object>();
-
-                        foreach (var kv in priceDict) // kv.Key = productId
+                        // Extract timestamps
+                        if (raw.ContainsKey("createdAt") && raw["createdAt"] is Timestamp createdAt)
                         {
-                            if (kv.Value is Dictionary<string, object> priceObj)
-                            {
-                                structuredPrices[kv.Key] = priceObj;
-                            }
+                            order["orderTime"] = createdAt.ToDateTime().ToString("yyyy-MM-dd HH:mm:ss");
+                        }
+                        else
+                        {
+                            order["orderTime"] = "Not set";
                         }
 
-                        raw["price"] = structuredPrices;
+                        if (raw.ContainsKey("updatedAt") && raw["updatedAt"] is Timestamp updatedAt)
+                        {
+                            order["arrivalTime"] = updatedAt.ToDateTime().AddDays(7).ToString("yyyy-MM-dd HH:mm:ss");
+                        }
+                        else
+                        {
+                            order["arrivalTime"] = "Not set";
+                        }
+
+                        // Set defaults
+                        order["discount"] = 0.0;
+                        order["trackingNo"] = GetStringValue(raw, "trackingNo") ?? "TRK" + DateTime.UtcNow.Ticks.ToString().Substring(10, 6);
+                        order["deliveredFrom"] = "R1";
+                        order["refundReason"] = "";
+                        order["processedBy"] = "";
+                    }
+                    else
+                    {
+                        Debug.WriteLine("Detected OLD order structure");
+                        // OLD STRUCTURE
+                        var stringFields = new[] { "userId", "email", "phoneNo", "address", "paymentType",
+                                          "trackingNo", "status", "deliveredFrom", "refundReason",
+                                          "processedBy" };
+
+                        foreach (var field in stringFields)
+                        {
+                            order[field] = GetStringValue(raw, field);
+                        }
+
+                        order["discount"] = GetDoubleValue(raw, "discount");
+
+                        // Timestamps
+                        order["orderTime"] = GetTimestampString(raw, "orderTime");
+                        order["arrivalTime"] = GetTimestampString(raw, "arrivalTime");
+                        order["returnRefundTime"] = GetTimestampString(raw, "returnRefundTime");
+
+                        // Items and price
+                        order["items"] = raw.ContainsKey("items") ? ProcessNestedFirestoreData(raw["items"]) : new Dictionary<string, object>();
+                        order["price"] = raw.ContainsKey("price") ? ProcessNestedFirestoreData(raw["price"]) : new Dictionary<string, object>();
                     }
 
-                    return raw;
-
-                }).ToList();
+                    orders.Add(order);
+                }
 
                 context.Response.Write(JsonConvert.SerializeObject(new
                 {
@@ -678,11 +836,196 @@ namespace Opton.Handlers
             }
             catch (Exception ex)
             {
+                Debug.WriteLine($"Error in HandleGetOrdersList: {ex.Message}");
                 context.Response.Write(JsonConvert.SerializeObject(new
                 {
                     success = false,
                     message = ex.Message
                 }));
+            }
+        }
+
+        private void ProcessNewStructureItem(Dictionary<string, object> item, Dictionary<string, object> itemsDict, Dictionary<string, object> priceDict)
+        {
+            try
+            {
+                string productId = "unknown";
+                string productName = "Unknown Product";
+                string color = "";
+                int quantity = 1;
+                double itemTotalPrice = 0.0;
+
+                // Extract product info
+                if (item.ContainsKey("product") && item["product"] is Dictionary<string, object> productData)
+                {
+                    productId = GetStringValue(productData, "id") ?? "unknown";
+                    productName = GetStringValue(productData, "name") ?? "Unknown Product";
+                    color = GetStringValue(productData, "color") ?? "";
+                }
+
+                // Extract quantity
+                if (item.ContainsKey("quantity"))
+                {
+                    quantity = Convert.ToInt32(item["quantity"]);
+                }
+
+                // Extract prices
+                if (item.ContainsKey("prices") && item["prices"] is Dictionary<string, object> prices)
+                {
+                    itemTotalPrice = GetDoubleValue(prices, "total");
+                }
+
+                // Build display item
+                var displayItem = new Dictionary<string, object>();
+
+                // Size and color (using "Adults" as the size key)
+                if (!string.IsNullOrEmpty(color))
+                {
+                    displayItem["Adults"] = color;
+                }
+
+                // Package info
+                if (item.ContainsKey("package") && item["package"] is Dictionary<string, object> package)
+                {
+                    string packageType = GetStringValue(package, "type") ?? "";
+                    displayItem["package"] = ConvertPackageType(packageType);
+                }
+
+                // Addons
+                if (item.ContainsKey("addons") && item["addons"] is List<object> addonsList)
+                {
+                    var addOns = new List<string>();
+                    foreach (var addonObj in addonsList)
+                    {
+                        if (addonObj is Dictionary<string, object> addon)
+                        {
+                            string addonType = GetStringValue(addon, "type") ?? "";
+                            if (!string.IsNullOrEmpty(addonType))
+                                addOns.Add(addonType);
+                        }
+                        else if (addonObj is string addonStr)
+                        {
+                            addOns.Add(addonStr);
+                        }
+                    }
+                    displayItem["addOn"] = addOns;
+                }
+
+                // Prescription
+                if (item.ContainsKey("prescription") && item["prescription"] is Dictionary<string, object> prescription)
+                {
+                    displayItem["prescription"] = prescription;
+                }
+
+                // Add to items dictionary
+                itemsDict[productId] = displayItem;
+
+                // Add to price dictionary
+                var priceInfo = new Dictionary<string, object>
+                {
+                    ["price"] = itemTotalPrice,
+                    ["quantity"] = quantity
+                };
+                priceDict[productId] = priceInfo;
+
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error processing item: {ex.Message}");
+            }
+        }
+
+        // Helper methods
+        private string GetStringValue(Dictionary<string, object> dict, string key)
+        {
+            return dict.ContainsKey(key) ? dict[key]?.ToString() ?? "" : "";
+        }
+
+        private double GetDoubleValue(Dictionary<string, object> dict, string key)
+        {
+            if (dict.ContainsKey(key))
+            {
+                if (dict[key] is double d) return d;
+                if (double.TryParse(dict[key]?.ToString(), out double result)) return result;
+            }
+            return 0.0;
+        }
+
+        private string GetTimestampString(Dictionary<string, object> dict, string key)
+        {
+            if (dict.ContainsKey(key) && dict[key] is Timestamp timestamp)
+            {
+                return timestamp.ToDateTime().ToString("yyyy-MM-dd HH:mm:ss");
+            }
+            return "Not set";
+        }
+
+        private string BuildAddressString(Dictionary<string, object> addressDict)
+        {
+            var street = GetStringValue(addressDict, "street");
+            var city = GetStringValue(addressDict, "city");
+            var state = GetStringValue(addressDict, "state");
+            var postalCode = GetStringValue(addressDict, "postalCode");
+
+            return $"{street}, {city}, {state} {postalCode}".Trim();
+        }
+
+        private string ConvertPackageType(string packageType)
+        {
+            var mapping = new Dictionary<string, string>
+            {
+                ["frameOnly"] = "Non-Prescription",
+                ["prescription"] = "Prescription",
+                ["readers"] = "Reading",
+                ["bifocal"] = "Bifocal"
+            };
+
+            return mapping.ContainsKey(packageType) ? mapping[packageType] : packageType;
+        }
+
+        private object ProcessNestedFirestoreData(object data)
+        {
+            if (data == null) return new Dictionary<string, object>();
+
+            try
+            {
+                if (data is Dictionary<string, object> dict)
+                {
+                    var result = new Dictionary<string, object>();
+
+                    foreach (var kvp in dict)
+                    {
+                        if (kvp.Value is Dictionary<string, object> nestedDict)
+                        {
+                            result[kvp.Key] = ProcessNestedFirestoreData(nestedDict);
+                        }
+                        else if (kvp.Value is List<object> list)
+                        {
+                            result[kvp.Key] = list.Select(item => ProcessNestedFirestoreData(item)).ToList();
+                        }
+                        else if (kvp.Value is Timestamp timestamp)
+                        {
+                            result[kvp.Key] = timestamp.ToDateTime().ToString("yyyy-MM-dd HH:mm:ss");
+                        }
+                        else
+                        {
+                            result[kvp.Key] = kvp.Value;
+                        }
+                    }
+                    return result;
+                }
+
+                if (data is List<object> dataList)
+                {
+                    return dataList.Select(item => ProcessNestedFirestoreData(item)).ToList();
+                }
+
+                return data;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error processing Firestore data: {ex.Message}");
+                return new Dictionary<string, object>();
             }
         }
 
@@ -1293,6 +1636,131 @@ namespace Opton.Handlers
             }
         }
 
+        private async Task HandleUpdateCartItem(HttpContext context, dynamic data, FirestoreDb db)
+        {
+            context.Response.ContentType = "application/json";
+            Debug.WriteLine("=== HandleUpdateCartItem START ===");
+
+            if (data.idToken == null)
+            {
+                Debug.WriteLine("No idToken provided");
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = false,
+                    message = "Authentication required"
+                }));
+                return;
+            }
+
+            try
+            {
+                var decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync((string)data.idToken);
+                string uid = decodedToken.Uid;
+                Debug.WriteLine($"Token verified for UID: {uid}");
+
+                string productId = data?.productId?.ToString() ?? "";
+                string colour = data?.colour?.ToString() ?? "black";
+                string size = data?.size?.ToString() ?? "Adults";
+
+                Debug.WriteLine($"Product ID: {productId}, Colour: {colour}, Size: {size}");
+
+                if (string.IsNullOrEmpty(productId))
+                {
+                    Debug.WriteLine("Product ID is empty");
+                    context.Response.Write(JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        message = "Product ID required"
+                    }));
+                    return;
+                }
+
+                var cartRef = db.Collection("Cart");
+
+                // Query to find the cart item by userId, productId, colour, and size
+                var query = cartRef
+                    .WhereEqualTo("userId", uid)
+                    .WhereEqualTo("productId", productId)
+                    .WhereEqualTo("colour", colour)
+                    .WhereEqualTo("size", size)
+                    .Limit(1);
+
+                var snapshot = await query.GetSnapshotAsync();
+
+                if (snapshot.Count == 0)
+                {
+                    Debug.WriteLine($"Cart item not found for user {uid}, product {productId}, colour {colour}, size {size}");
+                    context.Response.Write(JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        message = "Cart item not found"
+                    }));
+                    return;
+                }
+
+                var cartDoc = snapshot.Documents[0];
+                var cartId = cartDoc.Id;
+                Debug.WriteLine($"Found cart document with ID: {cartId}");
+
+                // Get existing cart data
+                var existingData = cartDoc.ToDictionary();
+                Debug.WriteLine($"Existing cart data: {JsonConvert.SerializeObject(existingData)}");
+
+                // Update only the fields we want to change
+                if (data?.package != null)
+                {
+                    string packageJson = data.package.ToString();
+                    Debug.WriteLine($"Updating package: {packageJson}");
+                    existingData["package"] = packageJson;
+                }
+
+                if (data?.addons != null)
+                {
+                    string addonsJson = data.addons.ToString();
+                    Debug.WriteLine($"Updating addons: {addonsJson}");
+                    existingData["addOns"] = addonsJson;
+                }
+
+                if (data?.prescription != null)
+                {
+                    string prescriptionJson = data.prescription.ToString();
+                    Debug.WriteLine($"Updating prescription: {prescriptionJson}");
+                    existingData["prescriptionDetails"] = prescriptionJson;
+                    existingData["hasPrescription"] = true;
+                }
+                else
+                {
+                    existingData["prescriptionDetails"] = "";
+                    existingData["hasPrescription"] = false;
+                }
+
+                // Save updated data back to Firestore
+                await cartRef.Document(cartId).SetAsync(existingData);
+
+                Debug.WriteLine("✓ Successfully updated cart item");
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    message = "Cart item updated successfully"
+                }));
+
+                Debug.WriteLine("=== HandleUpdateCartItem END (SUCCESS) ===");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"!!! ERROR in HandleUpdateCartItem !!!");
+                Debug.WriteLine($"Message: {ex.Message}");
+                Debug.WriteLine($"Stack: {ex.StackTrace}");
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = false,
+                    message = ex.Message
+                }));
+            }
+        }
+
         private async Task HandleGetRetailers(HttpContext context, FirestoreDb db)
         {
             try
@@ -1459,6 +1927,89 @@ namespace Opton.Handlers
             }
         }
 
+        private async Task HandleGetAppointmentTimes(HttpContext context, dynamic data, FirestoreDb db)
+        {
+            context.Response.ContentType = "application/json";
+            Debug.WriteLine("=== HandleGetAppointmentTimes START ===");
+
+            try
+            {
+                string storeId = data?.storeId?.ToString() ?? "";
+                string date = data?.date?.ToString() ?? "";
+
+                Debug.WriteLine($"Getting appointment times for store: {storeId}, date: {date}");
+
+                if (string.IsNullOrEmpty(storeId) || string.IsNullOrEmpty(date))
+                {
+                    context.Response.Write(JsonConvert.SerializeObject(new
+                    {
+                        success = false,
+                        message = "Store ID and date are required",
+                        bookedTimes = new List<string>()
+                    }));
+                    return;
+                }
+
+                // Parse the date to get start and end of day in UTC
+                DateTime targetDate = DateTime.Parse(date);
+                DateTime startOfDay = new DateTime(targetDate.Year, targetDate.Month, targetDate.Day, 0, 0, 0, DateTimeKind.Local).ToUniversalTime();
+                DateTime endOfDay = startOfDay.AddDays(1);
+
+                Debug.WriteLine($"Searching for appointments between {startOfDay} and {endOfDay}");
+
+                // Query appointments for this store and date
+                var appointmentsSnapshot = await db.Collection("Appointments")
+                    .WhereEqualTo("storeId", storeId)
+                    .WhereGreaterThanOrEqualTo("dateTime", Timestamp.FromDateTime(startOfDay))
+                    .WhereLessThan("dateTime", Timestamp.FromDateTime(endOfDay))
+                    .GetSnapshotAsync();
+
+                Debug.WriteLine($"Found {appointmentsSnapshot.Count} appointments");
+
+                var bookedTimes = new List<string>();
+
+                foreach (var doc in appointmentsSnapshot.Documents)
+                {
+                    var appointmentData = doc.ToDictionary();
+
+                    // Only include booked appointments (not cancelled or completed)
+                    string status = appointmentData.ContainsKey("status") ? appointmentData["status"]?.ToString() ?? "" : "";
+
+                    if (status.Equals("Booked", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (appointmentData.ContainsKey("dateTime") && appointmentData["dateTime"] is Timestamp ts)
+                        {
+                            DateTime appointmentTime = ts.ToDateTime().ToLocalTime();
+                            string timeSlot = appointmentTime.ToString("HH:mm");
+                            bookedTimes.Add(timeSlot);
+                            Debug.WriteLine($"Booked time slot: {timeSlot}");
+                        }
+                    }
+                }
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = true,
+                    bookedTimes = bookedTimes.Distinct().ToList() // Remove duplicates
+                }));
+
+                Debug.WriteLine("=== HandleGetAppointmentTimes END (SUCCESS) ===");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"!!! ERROR in HandleGetAppointmentTimes !!!");
+                Debug.WriteLine($"Message: {ex.Message}");
+                Debug.WriteLine($"Stack: {ex.StackTrace}");
+
+                context.Response.Write(JsonConvert.SerializeObject(new
+                {
+                    success = false,
+                    message = ex.Message,
+                    bookedTimes = new List<string>()
+                }));
+            }
+        }
+
         private async Task HandleGetStockList(HttpContext context, FirestoreDb db)
         {
             context.Response.ContentType = "application/json";
@@ -1499,34 +2050,82 @@ namespace Opton.Handlers
         private async Task HandleGetRestockList(HttpContext context, FirestoreDb db)
         {
             context.Response.ContentType = "application/json";
+            Debug.WriteLine("=== HandleGetRestockList START ===");
 
             try
             {
-                var snapshot = await db.Collection("RestockRequests").GetSnapshotAsync();
+                var snapshot = await db.Collection("Restock").GetSnapshotAsync();
+                Debug.WriteLine($"Found {snapshot.Count} documents in 'Restock' collection");
 
                 var restocks = snapshot.Documents.Select(doc =>
                 {
                     var dict = doc.ToDictionary();
                     dict["restockId"] = doc.Id;
 
-                    if (dict.ContainsKey("requestTime") && dict["requestTime"] is Timestamp ts)
-                        dict["requestTime"] = ts.ToDateTime().ToString("yyyy-MM-dd HH:mm:ss");
+                    // Ensure all required fields exist
+                    var requiredFields = new Dictionary<string, object>
+            {
+                { "productId", "" },
+                { "colour", "" },
+                { "size", "" },
+                { "quantity", 0 },
+                { "storeId", "" },
+                { "requestedBy", "" },
+                { "status", "Pending" },
+                { "reviewedBy", "" },
+                { "remarks", "" }
+            };
+
+                    foreach (var field in requiredFields)
+                    {
+                        if (!dict.ContainsKey(field.Key))
+                        {
+                            dict[field.Key] = field.Value;
+                        }
+                    }
+
+                    // Convert Timestamp fields to strings
+                    if (dict.ContainsKey("requestTime"))
+                    {
+                        if (dict["requestTime"] is Timestamp timestamp)
+                        {
+                            dict["requestTime"] = timestamp.ToDateTime().ToString("yyyy-MM-dd HH:mm:ss");
+                        }
+                        else
+                        {
+                            // If it's not a timestamp, try to convert it to string
+                            dict["requestTime"] = dict["requestTime"]?.ToString() ?? "N/A";
+                        }
+                    }
+                    else
+                    {
+                        dict["requestTime"] = "N/A";
+                    }
 
                     return dict;
                 }).ToList();
+
+                Debug.WriteLine($"Returning {restocks.Count} restock requests");
 
                 context.Response.Write(JsonConvert.SerializeObject(new
                 {
                     success = true,
                     restocks
                 }));
+
+                Debug.WriteLine("=== HandleGetRestockList END (SUCCESS) ===");
             }
             catch (Exception ex)
             {
+                Debug.WriteLine($"ERROR in HandleGetRestockList");
+                Debug.WriteLine($"Message: {ex.Message}");
+                Debug.WriteLine($"Stack: {ex.StackTrace}");
+
                 context.Response.Write(JsonConvert.SerializeObject(new
                 {
                     success = false,
-                    message = ex.Message
+                    message = ex.Message,
+                    restocks = new List<object>()
                 }));
             }
         }
@@ -1534,7 +2133,6 @@ namespace Opton.Handlers
         private async Task HandleGetStaffList(HttpContext context, FirestoreDb db)
         {
             context.Response.ContentType = "application/json";
-            Debug.WriteLine("=== HandleGetStaffList START ===");
 
             try
             {

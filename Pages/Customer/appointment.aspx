@@ -1005,7 +1005,7 @@
             console.log('Confirmed products:', selectedProducts);
         }
 
-        function updateAppointmentTimes() {
+        async function updateAppointmentTimes() {
             const dateInput = document.getElementById('appointmentDate').value;
             const timesContainer = document.getElementById('appointmentTimes');
             const prompt = document.getElementById('appointmentPrompt');
@@ -1030,38 +1030,108 @@
                 return;
             }
 
-            const [startHour, endHour] = hours.split('-').map(Number);
+            // Get retailer ID
+            const params = new URLSearchParams(window.location.search);
+            const retailerId = params.get('retailerId');
 
-            for (let h = startHour; h < endHour; h++) {
-                for (let m = 0; m < 60; m += 30) {
-                    const slotHour = h.toString().padStart(2, '0');
-                    const slotMin = m.toString().padStart(2, '0');
-                    const timeValue = `${slotHour}:${slotMin}`;
+            try {
+                // Fetch booked times for this date
+                const response = await fetch('/Handlers/fire_handler.ashx', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'getAppointmentTimes',
+                        storeId: retailerId,
+                        date: dateInput
+                    })
+                });
 
-                    const label = document.createElement('label');
-                    const radio = document.createElement('input');
-                    radio.type = "radio";
-                    radio.name = "appointmentTime";
-                    radio.value = timeValue;
+                const data = await response.json();
+                const bookedTimes = data.success ? data.bookedTimes : [];
 
-                    const span = document.createElement('span');
-                    span.textContent = timeValue;
+                console.log('Booked times:', bookedTimes);
 
-                    label.appendChild(radio);
-                    label.appendChild(span);
-                    timesContainer.appendChild(label);
+                const [startHour, endHour] = hours.split('-').map(Number);
 
-                    radio.addEventListener('change', () => {
-                        document.querySelectorAll('.appointment-times label').forEach(l => {
-                            l.style.backgroundColor = 'white';
-                            l.style.color = '#2C3639';
+                for (let h = startHour; h < endHour; h++) {
+                    for (let m = 0; m < 60; m += 30) {
+                        const slotHour = h.toString().padStart(2, '0');
+                        const slotMin = m.toString().padStart(2, '0');
+                        const timeValue = `${slotHour}:${slotMin}`;
+
+                        // Skip if this time slot is already booked
+                        if (bookedTimes.includes(timeValue)) {
+                            console.log(`Skipping booked time: ${timeValue}`);
+                            continue;
+                        }
+
+                        const label = document.createElement('label');
+                        const radio = document.createElement('input');
+                        radio.type = "radio";
+                        radio.name = "appointmentTime";
+                        radio.value = timeValue;
+
+                        const span = document.createElement('span');
+                        span.textContent = timeValue;
+
+                        label.appendChild(radio);
+                        label.appendChild(span);
+                        timesContainer.appendChild(label);
+
+                        radio.addEventListener('change', () => {
+                            document.querySelectorAll('.appointment-times label').forEach(l => {
+                                l.style.backgroundColor = 'white';
+                                l.style.color = '#2C3639';
+                            });
+
+                            label.style.backgroundColor = 'var(--color-dark)';
+                            label.style.color = 'white';
+
+                            bookBtn.disabled = false;
                         });
+                    }
+                }
 
-                        label.style.backgroundColor = 'var(--color-dark)';
-                        label.style.color = 'white';
+                if (timesContainer.children.length === 0) {
+                    timesContainer.innerHTML = `<div style="text-align:center; font-weight:bold; color: #dc3545;">All time slots are booked for this day.</div>`;
+                    bookBtn.disabled = true;
+                }
 
-                        bookBtn.disabled = false;
-                    });
+            } catch (err) {
+                console.error('Error fetching booked times:', err);
+                // Continue showing all times if fetch fails
+                const [startHour, endHour] = hours.split('-').map(Number);
+                for (let h = startHour; h < endHour; h++) {
+                    for (let m = 0; m < 60; m += 30) {
+                        const slotHour = h.toString().padStart(2, '0');
+                        const slotMin = m.toString().padStart(2, '0');
+                        const timeValue = `${slotHour}:${slotMin}`;
+
+                        const label = document.createElement('label');
+                        const radio = document.createElement('input');
+                        radio.type = "radio";
+                        radio.name = "appointmentTime";
+                        radio.value = timeValue;
+
+                        const span = document.createElement('span');
+                        span.textContent = timeValue;
+
+                        label.appendChild(radio);
+                        label.appendChild(span);
+                        timesContainer.appendChild(label);
+
+                        radio.addEventListener('change', () => {
+                            document.querySelectorAll('.appointment-times label').forEach(l => {
+                                l.style.backgroundColor = 'white';
+                                l.style.color = '#2C3639';
+                            });
+
+                            label.style.backgroundColor = 'var(--color-dark)';
+                            label.style.color = 'white';
+
+                            bookBtn.disabled = false;
+                        });
+                    }
                 }
             }
         }
@@ -1112,12 +1182,10 @@
                 const pd = document.getElementById('pd').value.trim();
 
                 if (leftSphere || leftCylinder || leftAxis || rightSphere || rightCylinder || rightAxis || pd) {
-                    // Build prescription object based on type
                     const prescriptionObj = {
                         type: prescriptionTypeValue || 'unspecified'
                     };
 
-                    // Add prescription values based on type
                     if (prescriptionTypeValue === 'nearsightedness' || prescriptionTypeValue === 'farsightedness') {
                         prescriptionObj.Near = {
                             left: leftSphere || '0',
@@ -1133,7 +1201,6 @@
                             right: rightSphere || '0'
                         };
                     } else {
-                        // Default structure for other types
                         prescriptionObj.Left = {
                             sphere: leftSphere || '0',
                             cylinder: leftCylinder || '0',
@@ -1158,14 +1225,12 @@
 
             const remarks = document.getElementById('userRemarks').value.trim();
 
-            // Build holdItems object matching Firebase structure
-            // Format: {"P-20":{"Adults":"silver"},"P-21":{"Adults":"black"}}
+            // Build holdItems object
             const holdItems = {};
             selectedProducts.forEach(p => {
                 if (!holdItems[p.id]) {
                     holdItems[p.id] = {};
                 }
-                // FIX: Store as {Adults: "black"} not {Adults: ["black"]}
                 holdItems[p.id][p.size] = p.color;
             });
 
@@ -1173,8 +1238,7 @@
             const params = new URLSearchParams(window.location.search);
             const retailerId = params.get('retailerId');
 
-            // FIX: Create proper timestamp format for dateTime
-            // Combine date and time into ISO format then let server convert to Timestamp
+            // Create proper timestamp format for dateTime
             const dateTimeISO = `${date}T${time}:00`;
 
             // Disable button to prevent double submission
@@ -1183,7 +1247,7 @@
             bookBtn.textContent = 'Booking...';
 
             try {
-                console.log('Saving appointment...');
+                console.log('Saving appointment via db_handler...');
 
                 // Get user ID if authenticated
                 let userId = null;
@@ -1192,35 +1256,37 @@
                     userId = user ? user.uid : null;
                 }
 
-                // Prepare payload with correct structure
+                // Prepare payload for db_handler
                 const payload = {
-                    action: 'saveAppointment',
+                    action: 'addAppointment',
                     storeId: retailerId,
                     userId: userId || '',
                     email: email,
                     name: name,
-                    phoneNo: phone, // Will be converted to number on server
+                    phoneNo: phone,
                     details: remarks || '',
-                    type: type.charAt(0).toUpperCase() + type.slice(1), // Capitalize first letter
-                    dateTime: dateTimeISO, // Send as ISO string for server to convert to Timestamp
+                    type: type.charAt(0).toUpperCase() + type.slice(1),
+                    dateTime: dateTimeISO,
                     remarks: remarks || '',
-                    status: 'Booked'
+                    status: 'Booked',
+                    staffId: '',
+                    cancelReason: ''
                 };
 
                 // Add prescription if exists
                 if (prescriptionData) {
-                    payload.prescription = prescriptionData;
+                    payload.prescription = JSON.stringify(prescriptionData);
                 }
 
-                // Add holdItems if exists
+                // Add holdItems if exists (changed from holdItem to match db_handler)
                 if (Object.keys(holdItems).length > 0) {
-                    payload.holdItems = holdItems;
+                    payload.holdItem = JSON.stringify(holdItems);
                 }
 
                 console.log('Payload:', JSON.stringify(payload, null, 2));
 
-                // Save appointment to Firebase
-                const saveResponse = await fetch('/Handlers/fire_handler.ashx', {
+                // Save appointment using db_handler
+                const saveResponse = await fetch('/Handlers/db_handler.ashx', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -1259,7 +1325,7 @@
                 // Show success message
                 alert('Appointment booked successfully! A confirmation email has been sent to ' + email);
 
-                // Optionally redirect back to retailers page
+                // Redirect back to retailers page
                 setTimeout(() => {
                     window.location.href = '/Pages/Customer/find_retailers.aspx';
                 }, 1500);
